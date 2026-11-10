@@ -1,0 +1,6 @@
+{
+  "name": "QuineHTML Studio — Editor & Laboratorio Meta-HTML",
+  "description": "Un ambiente interattivo auto-referenziale scritto in HTML per imparare e costruire pagine HTML separando Modello, Mapping e Target.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

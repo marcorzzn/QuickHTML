@@ -1,0 +1,1743 @@
+Come può in programma scritto in html insegnare l'html usando l'html?
+The user asks: how can a program written in HTML teach HTML using HTML? This is a meta-question, similar to the "editor written in HTML" question. Let me think about the layers.
+
+A program written in HTML that teaches HTML using HTML — this is a self-referential, bootstrapping question. Let me think about what's actually happening:
+
+HTML is a declarative markup language — it describes structure and content, not behavior. So "a program written in HTML" is really "a document written in HTML + CSS + JS" (since HTML alone can't be a program).
+
+But the meta-question is interesting: the page that teaches HTML is itself made of HTML. So the learner can:
+
+View the source of the teaching page
+
+See the HTML that produces the lesson
+
+The lesson content (code examples) is displayed inside <pre><code> blocks — but those need to be escaped (&lt; instead of <) so they display as text instead of being rendered.
+
+The self-referential nature: the HTML that teaches HTML is simultaneously:
+
+The medium of instruction (the page structure)
+
+The subject of instruction (HTML)
+
+The example (you can inspect the page you're reading)
+
+Let me think about the "layers" concept from the conversation. The user has been exploring abstraction layers, what's under the hood, etc.
+
+Key mechanisms:
+
+Escaping: to show <p> as text, you must write &lt;p&gt; in HTML. This is the fundamental trick.
+
+View Source / DevTools: the learner can inspect the actual HTML that produces the page. The page is its own textbook.
+
+<pre> and <code>: semantic tags for code blocks.
+
+contenteditable or live editors: you can have a mini-editor on the page (like the MVP earlier) that lets learners type HTML and see the result.
+
+<iframe> with srcdoc: render user HTML in an isolated sandbox.
+
+<template>: hold HTML that isn't rendered until cloned.
+
+<textarea>: user types raw HTML as text; JS reads .value and writes to an iframe or a preview div.
+
+Shadow DOM: isolate styles/content.
+
+<details>/<summary>: progressive disclosure of lessons.
+
+<dialog>: modal lessons.
+
+Custom elements: <lesson-step>, <code-example> — the page can define its own vocabulary via Web Components.
+
+The self-teaching loop:
+
+The page is written in HTML.
+
+The page explains HTML.
+
+The learner can view source and see the HTML that makes the explanation.
+
+So the explanation demonstrates itself.
+
+This is like a Quine — a program that outputs its own source. Or like a compiler written in its own language (bootstrapping). The HTML page that teaches HTML is a "self-hosting" artifact.
+
+Challenges:
+
+Escaping: you can't just write <p> in the HTML — it would be interpreted. You must escape entities. And to teach escaping, you must escape the escape sequences (&amp;lt;).
+
+Chicken-and-egg: to teach <strong>, the page uses <strong> to emphasize. The example is the medium.
+
+Progressive disclosure: start with text, then tags, then attributes, then nesting.
+
+Validation: how does the learner know they got it right? Need JS to parse and compare.
+
+Security: if the learner can type HTML that executes, you need sandboxing (iframe sandbox attribute).
+
+Concrete architecture:
+
+Content stored as data (JSON or HTML template) — separation of content from presentation (same theme as before!)
+
+Renderer that displays lesson
+
+Live editor with iframe preview (sandboxed)
+
+Diff/validation engine
+
+Progressive lessons
+
+The meta-point: this is the same abstraction pattern. The "model" is the lesson content + the learner's code; the "mapping" is the renderer; the "target" is the displayed page. The page teaches HTML by being HTML and by letting you manipulate HTML.
+
+Let me also connect to Curry-Howard/Gödel from the previous message? The user might appreciate a brief connection — self-reference is Gödel territory. A page that teaches HTML using HTML is a form of self-reference. But I shouldn't overdo it.
+
+Let me structure the answer:
+
+The trick: escaping — the fundamental mechanism
+
+The layers of a self-teaching page — how it's structured
+
+The self-referential loop — view source, devtools
+
+Live editor architecture — sandboxed iframe
+
+Concrete MVP — a minimal self-teaching page
+
+The deeper point — bootstrapping, self-hosting, and the abstraction theme
+
+Let me write a concrete MVP:
+
+html
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Impara l'HTML con l'HTML</title>
+<style>...</style>
+</head>
+<body>
+<h1>Impara l'HTML con l'HTML</h1>
+
+<p>Questa pagina è scritta in HTML e insegna l'HTML. Puoi vederne il sorgente con Ctrl+U.</p>
+
+<section>
+  <h2>Lezione 1: i paragrafi</h2>
+  <p>Un paragrafo si scrive così:</p>
+  <pre><code>&lt;p&gt;Ciao, mondo!&lt;/p&gt;</code></pre>
+  <p>Prova a modificarlo:</p>
+  <textarea id="editor1">&lt;p&gt;Ciao, mondo!&lt;/p&gt;</textarea>
+  <iframe id="preview1" sandbox></iframe>
+</section>
+...
+<script>
+function bind(editorId, previewId) {
+  const ed = document.getElementById(editorId);
+  const fr = document.getElementById(previewId);
+  const update = () => {
+    const doc = fr.contentDocument;
+    doc.open();
+    doc.write(ed.value);
+    doc.close();
+  };
+  ed.addEventListener('input', update);
+  update();
+}
+bind('editor1', 'preview1');
+</script>
+</body>
+</html>
+Wait, iframe sandbox with doc.write — need to be careful. Actually with sandbox attribute without allow-scripts, the content can't run scripts, which is good for safety. But doc.write should work.
+
+Actually, a cleaner way is to use srcdoc:
+
+js
+fr.srcdoc = ed.value;
+That's simpler and works with sandbox.
+
+Let me write the full MVP carefully.
+
+Also mention:
+
+<pre><code> for displaying code
+
+Escaping: &lt; &gt; &amp; &quot;
+
+textContent vs innerHTML: to set code safely, use .textContent — then you don't need to escape manually in JS
+
+<template> for holding examples
+
+<details> for progressive disclosure
+
+The self-referential points:
+
+The page is HTML, so viewing source shows HTML
+
+The examples are escaped HTML, so they display as text
+
+The learner's input is raw HTML, rendered in a sandbox
+
+The page can even show its own source via fetch(location.href)
+
+Let me also note the "chicken and egg" of bootstrapping: how do you write the first HTML page that teaches HTML? You write it by hand, using knowledge of HTML. The page then helps others learn. This is the same as a compiler written in its own language — you need a bootstrap version.
+
+Connection to the previous abstraction theme:
+
+The "model" is the lesson content (data) + the learner's code (data)
+
+The "mapping" is the renderer (escape for display, srcdoc for preview)
+
+The "target" is the DOM
+
+Same separation: content ≠ presentation ≠ behavior
+
+And the Gödel connection: self-reference. A page that contains its own description is a fixed-point construction. HTML's escaping mechanism is what makes self-description possible without paradox — like Gödel numbering makes self-reference possible in arithmetic. This is a nice parallel but I should keep it brief.
+
+Let me write the answer in Italian, matching the conversation language.
+
+Structure:
+
+Il trucco fondamentale: l'escaping
+
+L'auto-riferimento: la pagina è il suo stesso esempio
+
+Architettura di una pagina che insegna (con MVP)
+
+I livelli di astrazione (collegamento al tema)
+
+Il paradosso dell'uovo e la gallina (bootstrapping)
+
+Collegamento a Gödel/self-reference (breve)
+
+Let me write the MVP well. I'll make it a complete, working single file.
+
+html
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Impara l'HTML con l'HTML</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
+  pre { background: #f4f4f4; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+  code { font-family: ui-monospace, monospace; }
+  .lezione { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+  textarea { width: 100%; min-height: 80px; font-family: ui-monospace, monospace; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+  iframe { width: 100%; min-height: 100px; border: 1px solid #ccc; border-radius: 4px; margin-top: 0.5rem; background: white; }
+</style>
+</head>
+<body>
+
+<h1>Impara l'HTML con l'HTML</h1>
+
+<p>Questa pagina è scritta in HTML e insegna l'HTML. Il paragrafo che stai leggendo è un <code>&lt;p&gt;</code>. Puoi vedere il sorgente con <kbd>Ctrl+U</kbd>.</p>
+
+<div class="lezione">
+  <h2>Lezione 1 — Il paragrafo</h2>
+  <p>Un paragrafo si scrive così:</p>
+  <pre><code>&lt;p&gt;Ciao, mondo!&lt;/p&gt;</code></pre>
+  <p>Prova a modificare il codice qui sotto:</p>
+  <textarea id="ed1">&lt;p&gt;Ciao, mondo!&lt;/p&gt;</textarea>
+  <iframe id="fr1" sandbox></iframe>
+</div>
+
+<div class="lezione">
+  <h2>Lezione 2 — Grassetto e corsivo</h2>
+  <p>Per il <strong>grassetto</strong> si usa <code>&lt;strong&gt;</code>, per il <em>corsivo</em> si usa <code>&lt;em&gt;</code>:</p>
+  <pre><code>&lt;p&gt;Questo è &lt;strong&gt;importante&lt;/strong&gt; e questo è &lt;em&gt;enfatico&lt;/em&gt;.&lt;/p&gt;</code></pre>
+  <textarea id="ed2">&lt;p&gt;Questo è &lt;strong&gt;importante&lt;/strong&gt; e questo è &lt;em&gt;enfatico&lt;/em&gt;.&lt;/p&gt;</textarea>
+  <iframe id="fr2" sandbox></iframe>
+</div>
+
+<div class="lezione">
+  <h2>Lezione 3 — I link</h2>
+  <p>Un link si scrive con <code>&lt;a href="..."&gt;</code>:</p>
+  <pre><code>&lt;a href="https://example.com"&gt;Vai al sito&lt;/a&gt;</code></pre>
+  <textarea id="ed3">&lt;a href="https://example.com"&gt;Vai al sito&lt;/a&gt;</textarea>
+  <iframe id="fr3" sandbox></iframe>
+</div>
+
+<details>
+  <summary>Come funziona questa pagina? (clicca per espandere)</summary>
+  <p>Questa pagina è scritta in HTML. Gli esempi di codice sono dentro <code>&lt;pre&gt;&lt;code&gt;</code> e i caratteri <code>&lt;</code> e <code>&gt;</code> sono scritti come <code>&amp;lt;</code> e <code>&amp;gt;</code> per non essere interpretati come tag.</p>
+  <p>Le aree di testo sono <code>&lt;textarea&gt;</code>: contengono il codice come testo semplice. L'anteprima è un <code>&lt;iframe sandbox&gt;</code>: il codice scritto viene iniettato lì dentro, isolato dalla pagina principale.</p>
+</details>
+
+<script>
+function bind(editorId, iframeId) {
+  const editor = document.getElementById(editorId);
+  const frame = document.getElementById(iframeId);
+  const update = () => {
+    frame.srcdoc = editor.value;
+  };
+  editor.addEventListener('input', update);
+  update();
+}
+
+bind('ed1', 'fr1');
+bind('ed2', 'fr2');
+bind('ed3', 'fr3');
+</script>
+
+</body>
+</html>
+Wait — srcdoc with sandbox attribute: the sandbox attribute by default disallows scripts, same-origin, forms, popups, etc. That's good for safety. The content will render but scripts won't execute. For teaching basic HTML that's fine.
+
+Actually there's a subtlety: srcdoc content is treated as same-origin with the parent unless sandbox is applied. With sandbox (empty value), it's treated as unique origin, scripts disabled. Good.
+
+But if the learner types <a href="..."> and clicks, it navigates the iframe — that's fine within sandbox (navigation is allowed by default? Actually allow-top-navigation is not set, so top navigation is blocked, but iframe self-navigation is allowed). Fine.
+
+One issue: srcdoc needs proper HTML document or fragment? It accepts a full document. If you give a fragment like <p>Ciao</p>, the browser will parse it as a full document. That works.
+
+Let me refine the explanation.
+
+The key insight to convey: the page is simultaneously medium, subject, and example. Three roles in one artifact.
+
+The mechanism that makes it possible: escaping (&lt; etc.). Without escaping, the example <p> would be interpreted as a tag and become invisible as text. Escaping is what separates "code as text to display" from "code as code to execute". This is the fundamental distinction.
+
+Then the execution side: to let the learner run their HTML, you need a separate context — an iframe with sandbox, or a new window. You can't just innerHTML it into the page (security, style leakage). The iframe is the "target" that isolates the learner's code from the teaching page.
+
+Then the self-inspection: view source, DevTools. The page can even fetch itself (fetch(location.href)) and display its own source in a <pre>.
+
+Then the abstraction layers (connecting to the whole conversation):
+
+Model: lesson content (data), learner's code (data)
+
+Mapping: escape-for-display, srcdoc-for-preview
+
+Target: the DOM of the teaching page, the DOM of the iframe
+
+Then bootstrapping: the first HTML-teaching page must be written by someone who already knows HTML. Once it exists, it can teach others, and they can write better ones. This is the same as a compiler written in its own language: you need a bootstrap compiler.
+
+Then Gödel/self-reference (brief): a page that describes itself is a fixed point. HTML's escaping is what makes self-description possible without paradox — analogous to Gödel numbering. The page can contain a representation of itself (escaped) that doesn't interfere with the page's own execution.
+
+Let me also address the "types and orders of logic" connection? Maybe briefly — the lesson content can be thought of as a specification, the learner's code as an implementation, and validation as type checking. But that might be too much. I'll keep the focus.
+
+Actually, the user's question is quite direct: "Come può un programma scritto in html insegnare l'html usando l'html?" — How can a program written in HTML teach HTML using HTML?
+
+So the answer should be:
+
+HTML alone isn't a program — it's markup. The "program" is HTML + CSS + JS.
+
+The trick is escaping: displaying HTML as text requires escaping.
+
+The self-reference: the page is its own example; view source.
+
+The live editor: sandboxed iframe to run learner code.
+
+The abstraction: content, presentation, execution are separated.
+
+Let me write a clear, well-structured answer with the MVP.
+
+I'll write in Italian. Keep it focused but rich. Use headers.
+
+Let me also mention the <template> element and contenteditable as options? Maybe briefly.
+
+Also: textContent vs innerHTML — to display code safely from JS, use textContent; the escaping is automatic. In the static HTML you write &lt; manually.
+
+One more thing: the page can include a "show source" button that fetches its own source:
+
+js
+document.getElementById('showSource').addEventListener('click', async () => {
+  const src = await fetch(location.href).then(r => r.text());
+  const pre = document.getElementById('sourceView');
+  pre.textContent = src; // textContent escapes automatically
+});
+This is a nice self-referential touch.
+
+Let me finalize the answer.
+
+Length: This deserves a thorough answer with an MVP, but I should keep it tighter than the previous huge answers. Maybe ~800-1200 words plus code. The user has been asking deep questions and I've been giving long answers. This one can be a bit more focused.
+
+Actually, given the pattern, a thorough answer is expected. Let me aim for a solid, well-organized response with:
+
+The core trick (escaping)
+
+The three roles
+
+The live editor architecture
+
+Complete MVP
+
+Connection to abstraction layers
+
+Bootstrapping
+
+Brief self-reference note
+
+Let me write it.
+
+La domanda è più profonda di quanto sembri, perché tocca un punto che abbiamo già incontrato: HTML da solo non è un programma, è markup. Quindi “un programma scritto in HTML che insegna HTML” è in realtà una pagina HTML+CSS+JS che usa se stessa come esempio. E il meccanismo che rende possibile l’auto-insegnamento è uno solo, semplice e potentissimo: l’escaping.
+
+1. Il trucco fondamentale: l’escaping
+Se scrivi questo in una pagina HTML:
+
+html
+<p>Questo è un paragrafo</p>
+il browser interpreta <p> come tag e non lo mostra. Ma se vuoi mostrare il codice come testo, devi scrivere:
+
+html
+<pre><code>&lt;p&gt;Questo è un paragrafo&lt;/p&gt;</code></pre>
+&lt; e &gt; sono entità HTML: dicono al parser “questo non è un tag, è il carattere <”. Il browser li renderizza come testo, non li esegue.
+
+Questa è la separazione fondamentale:
+
+codice come codice → viene eseguito (es. <strong>ciao</strong> produce ciao);
+
+codice come testo → viene mostrato (es. <code>&lt;strong&gt;ciao&lt;/strong&gt;</code> produce <strong>ciao</strong>).
+
+Senza escaping, una pagina che insegna HTML non potrebbe mostrare il proprio oggetto: gli esempi diventerebbero parte della pagina e sparirebbero come testo. L’escaping è ciò che rende possibile l’auto-descrizione.
+
+2. I tre ruoli della stessa pagina
+Una pagina che insegna HTML è simultaneamente:
+
+Ruolo	Cosa significa	Esempio
+Medium	È scritta in HTML: la struttura della lezione è HTML	titoli <h1>, paragrafi <p>, sezioni <section>
+Soggetto	Parla di HTML: il contenuto è HTML	“un paragrafo si scrive <p>…</p>”
+Esempio	È essa stessa un esempio ispezionabile	apri il sorgente con Ctrl+U e vedi l’HTML che produce la lezione
+Questa è l’auto-riferimento: la pagina è il proprio libro di testo e il proprio esempio. Il learner non deve immaginare cosa sia HTML: ce l’ha davanti, e può ispezionarlo.
+
+3. L’esecuzione: il sandbox
+Mostrare codice è una cosa; farlo eseguire al learner è un’altra. Non puoi iniettare l’HTML scritto dall’utente direttamente nella pagina che insegna: romperebbe il layout, i CSS, la sicurezza. Ti serve un contesto separato: un <iframe> con attributo sandbox.
+
+html
+<textarea id="ed"></textarea>
+<iframe id="fr" sandbox></iframe>
+js
+const ed = document.getElementById('ed');
+const fr = document.getElementById('fr');
+ed.addEventListener('input', () => { fr.srcdoc = ed.value; });
+srcdoc inietta l’HTML come documento dell’iframe;
+
+sandbox (senza allow-scripts) disabilita JavaScript dentro l’iframe: il learner può giocare con HTML e CSS, ma non eseguire codice arbitrario nella tua pagina.
+
+L’iframe è il target isolato: il codice del learner vive lì, separato dal “programma che insegna”.
+
+4. MVP funzionante
+Un file, copia e apri nel browser.
+
+html
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Impara l'HTML con l'HTML</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 820px;
+         margin: 2rem auto; padding: 0 1rem; line-height: 1.6; color: #1a1a1a; }
+  pre { background: #f4f4f4; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+  code { font-family: ui-monospace, monospace; font-size: 0.95em; }
+  .lezione { border: 1px solid #ddd; border-radius: 8px;
+             padding: 1rem 1.25rem; margin: 1.5rem 0; background: #fff; }
+  textarea { width: 100%; min-height: 90px; font-family: ui-monospace, monospace;
+             padding: .6rem; border: 1px solid #ccc; border-radius: 6px;
+             font-size: .95em; resize: vertical; }
+  iframe { width: 100%; min-height: 110px; border: 1px solid #ccc;
+           border-radius: 6px; margin-top: .5rem; background: #fff; }
+  details { margin-top: 2rem; padding: 1rem; background: #f9f9f9;
+            border-radius: 8px; }
+  kbd { background: #eee; padding: 1px 5px; border-radius: 3px;
+        font-family: ui-monospace, monospace; font-size: .9em; }
+</style>
+</head>
+<body>
+
+<h1>Impara l'HTML con l'HTML</h1>
+
+<p>Questa pagina è scritta in HTML e insegna l'HTML. Il paragrafo che stai
+leggendo è un <code>&lt;p&gt;</code>. Puoi vedere il sorgente con
+<kbd>Ctrl+U</kbd> (o Cmd+U su Mac): quello che vedrai è esattamente
+l'HTML che ha prodotto questa pagina.</p>
+
+<div class="lezione">
+  <h2>Lezione 1 — Il paragrafo</h2>
+  <p>Un paragrafo si scrive così:</p>
+  <pre><code>&lt;p&gt;Ciao, mondo!&lt;/p&gt;</code></pre>
+  <p>Prova a modificare il codice qui sotto e guarda l'anteprima:</p>
+  <textarea id="ed1">&lt;p&gt;Ciao, mondo!&lt;/p&gt;</textarea>
+  <iframe id="fr1" sandbox></iframe>
+</div>
+
+<div class="lezione">
+  <h2>Lezione 2 — Grassetto e corsivo</h2>
+  <p>Il <strong>grassetto</strong> si scrive con <code>&lt;strong&gt;</code>,
+     il <em>corsivo</em> con <code>&lt;em&gt;</code>:</p>
+  <pre><code>&lt;p&gt;Questo è &lt;strong&gt;importante&lt;/strong&gt; e questo è &lt;em&gt;enfatico&lt;/em&gt;.&lt;/p&gt;</code></pre>
+  <textarea id="ed2">&lt;p&gt;Questo è &lt;strong&gt;importante&lt;/strong&gt; e questo è &lt;em&gt;enfatico&lt;/em&gt;.&lt;/p&gt;</textarea>
+  <iframe id="fr2" sandbox></iframe>
+</div>
+
+<div class="lezione">
+  <h2>Lezione 3 — I link</h2>
+  <p>Un link si scrive con <code>&lt;a href="..."&gt;…&lt;/a&gt;</code>:</p>
+  <pre><code>&lt;a href="https://example.com"&gt;Vai al sito&lt;/a&gt;</code></pre>
+  <textarea id="ed3">&lt;a href="https://example.com"&gt;Vai al sito&lt;/a&gt;</textarea>
+  <iframe id="fr3" sandbox></iframe>
+</div>
+
+<details>
+  <summary>Come funziona questa pagina? (clicca per espandere)</summary>
+  <p>Gli esempi di codice sono dentro <code>&lt;pre&gt;&lt;code&gt;</code>.
+     I caratteri <code>&lt;</code> e <code>&gt;</code> sono scritti come
+     <code>&amp;lt;</code> e <code>&amp;gt;</code>: è l'<strong>escaping</strong>.
+     Senza di esso, il browser interpreterebbe gli esempi come tag e non li
+     mostrerebbe.</p>
+  <p>Le aree di testo sono <code>&lt;textarea&gt;</code>: contengono il codice
+     come testo. L'anteprima è un <code>&lt;iframe sandbox&gt;</code>: il
+     codice scritto viene iniettato lì dentro tramite <code>srcdoc</code>,
+     isolato dalla pagina principale.</p>
+</details>
+
+<script>
+  function bind(editorId, frameId) {
+    const ed = document.getElementById(editorId);
+    const fr = document.getElementById(frameId);
+    const update = () => { fr.srcdoc = ed.value; };
+    ed.addEventListener('input', update);
+    update();
+  }
+  bind('ed1', 'fr1');
+  bind('ed2', 'fr2');
+  bind('ed3', 'fr3');
+</script>
+
+</body>
+</html>
+Nota il dettaglio: dentro <textarea> il contenuto non viene interpretato come HTML. Quindi <p>Ciao</p> scritto lì dentro è già testo, non serve escaping manuale nel sorgente della textarea. Ma nel <pre><code> della spiegazione sì, perché lì il browser leggerebbe i tag. Sono due contesti diversi dello stesso meccanismo.
+
+5. Il collegamento all’astrazione
+Ritorna lo stesso schema di sempre, applicato alla pagina che insegna:
+
+Modello: il contenuto delle lezioni (dati) + il codice scritto dal learner (dati).
+
+Mapping: la funzione escape() per mostrare il codice come testo; srcdoc per eseguirlo; <pre><code> per la presentazione.
+
+Target: il DOM della pagina che insegna (per la lezione) e il DOM dell’iframe (per l’esecuzione del learner).
+
+La pagina non “contiene” il proprio comportamento: lo separa in tre strati. Il codice del learner non tocca mai il DOM della pagina che insegna, perché vive in un target isolato. È la stessa regola dell’editor MVP: il codice è dato, il renderer decide dove e come mostrarlo o eseguirlo.
+
+6. Il paradosso dell’uovo e la gallina (bootstrapping)
+Come si scrive la prima pagina che insegna HTML? Serve qualcuno che già conosca l’HTML per scriverla. Una volta che esiste, può insegnare ad altri, che a loro volta possono migliorarla.
+
+È lo stesso problema di un compilatore scritto nel proprio linguaggio: per compilarlo serve un compilatore già esistente (il bootstrap compiler). La self-hosting non elimina il punto di partenza: lo sposta.
+
+Qui il punto di partenza è minimo — un editor di testo e la conoscenza di una manciata di tag — ma concettualmente è identico: la prima pagina che insegna HTML non può essere insegnata da sé stessa. Può solo essere scritta da chi già sa. Dopo, il ciclo si chiude.
+
+7. Auto-riferimento e Gödel (nota breve)
+Una pagina che descrive se stessa è una costruzione a punto fisso. In matematica, Gödel ottiene l’auto-riferimento numerando le formule (numeri di Gödel): una formula può “parlare di” un’altra formula, e quindi di sé, senza paradosso. In HTML, l’escaping fa la stessa cosa: permette alla pagina di contenere una rappresentazione testuale di sé (&lt;p&gt;…&lt;/p&gt;) che non interferisce con l’esecuzione della pagina stessa.
+
+Senza escaping, l’auto-descrizione collasserebbe: il testo descrittivo verrebbe eseguito come codice e il paradosso (o la sparizione) sarebbe immediato. L’escaping è il numero di Gödel dell’HTML: il meccanismo che separa il livello “menzionato” dal livello “usato”, e rende possibile l’auto-riferimento senza contraddizione.
+
+In una frase
+Una pagina scritta in HTML insegna HTML perché usa se stessa come esempio, mostra il codice tramite escaping (livello menzionato) e lo esegue in un iframe isolato (livello usato) — separando medium, soggetto e target secondo lo stesso schema di astrazione che abbiamo visto per l’editor. Il bootstrapping richiede un punto di partenza esterno, ma una volta chiuso il ciclo, la pagina è simultaneamente libro, esempio e sandbox.
+
+Tutte riflessioni interessanti, bisogna mantenere questo aspetto logico presente, ma vorrei continuare a costruire una sorta di editor di html in html. 
+
+Se ad esempio su un editor di testo voglio il grassetto, scelgo dall'ui il tasto che fa il grassetto. Se io voglio in html una schermata con un tasto che faccia una certa cosa, allora devo avere un'ui che mi permetta di fare una certa cosa o avere una porzione di codice pre-impostata che mi permetta di farlo
+The user wants to continue building an HTML editor in HTML. They're saying: if I want bold in a text editor, I choose the bold button from the UI. If I want in HTML a screen with a button that does a certain thing, then I need a UI that allows me to do a certain thing or have a pre-set portion of code that allows me to do it.
+
+So they want to extend the MVP editor to be an HTML editor specifically. They want building blocks / snippets. They want a UI for inserting HTML elements (like a button that does something, a div, etc.) and preset code snippets.
+
+Let me build on the previous MVP. The idea: an editor where you can insert HTML structural elements via toolbar buttons, with pre-set snippets, and also see the generated HTML. It should maintain the logic/abstraction aspect: model → mapping → HTML.
+
+Key insight from their message: "se io voglio in html una schermata con un tasto che faccia una certa cosa, allora devo avere un'ui che mi permetta di fare una certa cosa o avere una porzione di codice pre-impostata"
+
+So they want two paths:
+
+UI-driven: a toolbar that lets you insert elements (button, div, section, list, table, form...)
+
+Snippet-based: preset code blocks that can be inserted
+
+And this needs to produce actual HTML. So this is an HTML editor with block-level insertion of HTML elements and snippet insertion, not just text formatting.
+
+Let me design this properly. Building on the model-based architecture:
+
+Model: blocks. But now blocks can be more complex than just p/h1/h2/quote/ul. They can be "html elements" with attributes and children. Actually, let's keep it manageable but expand.
+
+Let me think about the right model for an HTML editor. The model should be:
+
+block = { type, attrs?, children?, content? }
+
+Some blocks are "text blocks" (p, h1, etc.) with inline runs
+
+Some blocks are "element blocks" (button, div, section, table, etc.) with attributes and maybe nested content
+
+Some blocks are "snippet blocks" that carry raw HTML
+
+Actually, for an HTML editor, the cleanest approach: model = list of blocks, where each block is either:
+
+{ kind: 'text', type: 'p'|'h1'|..., runs: [...] } — editable text
+
+{ kind: 'element', tag: 'button', attrs: {...}, text: '...' } — atomic element with attributes
+
+{ kind: 'snippet', html: '<...>' } — raw preset HTML
+
+Then the mapping renders each to HTML. UI has two toolbars: one for text formatting, one for "insert element" (with a dropdown/palette of elements: button, link, img, input, etc.), and one for "insert snippet" (preset patterns: card, nav, form, table...).
+
+The user explicitly mentions: "un tasto che faccia una certa cosa" — a button that does something. So they want to be able to create interactive elements. So the element insertion should let you configure a button with text + onclick behavior. But careful: onclick with JS in sandboxed iframe... we can allow simple behaviors like alert(), or toggling visibility.
+
+Let me design a palette-driven editor:
+
+Toolbar 1 — Text blocks: Paragraph, H1, H2, Quote, List (like before)
+Toolbar 2 — Inline: Bold, Italic, Link
+Toolbar 3 — Elements (insert): Button, Link, Image, Input, Div, Section, Heading, List
+Toolbar 4 — Snippets: Card, Navigation, Form, Table, Grid
+
+When you insert an element, you get a modal/dialog to configure it (text, href, src, onclick action).
+
+Actually, let me keep it streamlined. Let me make it work with:
+
+Elements inserted with default attributes, then editable inline (attributes via a small popover when the block is selected)
+
+Snippets inserted as nested blocks (a section containing children)
+
+Hmm, nested blocks add complexity. Let me think about the simplest thing that demonstrably works.
+
+Approach: flat list of blocks, but each block can be:
+
+Text block: p, h1, h2, h3, blockquote, li — editable inline content
+
+Element block: button, a, img, input, hr, div — with attributes editable via a properties panel
+
+Container block: section, div, article, nav, ul — with children (array of blocks)
+
+Snippet block: raw HTML preset — inserted as-is, with a preview
+
+Actually containers with children means recursion in both render and edit. That's doable but adds complexity. Let me do it — it's what makes it a real HTML editor.
+
+Actually, let me reconsider. The user's request: "se io voglio in html una schermata con un tasto che faccia una certa cosa, allora devo avere un'ui che mi permetta di fare una certa cosa o avere una porzione di codice pre-impostata"
+
+So the concrete goal: create a screen with a button that does something. Two paths:
+
+UI-driven: insert button element, configure it (text, action)
+
+Snippet: insert a preset like <button onclick="alert('ciao')">Clicca</button>
+
+So the MVP should demonstrate BOTH paths. Great.
+
+Let me design:
+
+Model
+
+js
+doc = [
+  { kind: 'text', type: 'p', runs: [{text, marks}] },
+  { kind: 'element', tag: 'button', attrs: { onclick: "alert('ciao')" }, text: 'Clicca' },
+  { kind: 'snippet', html: '<section class="card">...</section>' }
+]
+Rendering: text blocks → contenteditable; element blocks → rendered as live element (button is clickable in preview mode, editable in edit mode); snippet → rendered as HTML.
+
+Two modes: Edit mode (everything contenteditable/editable) and Preview mode (rendered as the final page). Toggle button.
+
+Actually, let me be pragmatic: two panels side by side — editor (blocks with editing affordances) and preview (rendered HTML in iframe). This is exactly what tools like CodePen do. And it maps perfectly to the abstraction: model → mapping → HTML string → iframe srcdoc.
+
+Actually the user has been building an editor where the content IS the model and the mapping produces HTML. Let me split:
+
+Left: block editor (visual, like before, but with element insertion)
+
+Right: generated HTML (live preview in iframe)
+
+And a "code view" button that shows the generated HTML.
+
+Let me write this MVP. It should be substantial but functional. Let me structure it:
+
+html
+<!DOCTYPE html>
+<html lang="it">
+<head>...</head>
+<body>
+  <div class="app">
+    <aside class="palette">
+      <h2>Testo</h2>
+      <button data-textblock="p">¶ Paragrafo</button>
+      <button data-textblock="h1">H1</button>
+      ...
+      <h2>Elementi</h2>
+      <button data-element="button">Button</button>
+      <button data-element="a">Link</button>
+      <button data-element="img">Immagine</button>
+      <button data-element="input">Input</button>
+      <button data-element="hr">Riga</button>
+      <h2>Snippet</h2>
+      <button data-snippet="card">Card</button>
+      <button data-snippet="nav">Navigazione</button>
+      <button data-snippet="form">Form</button>
+      <button data-snippet="table">Tabella</button>
+    </aside>
+    <main class="editor" id="editor"></main>
+    <aside class="preview">
+      <iframe id="preview" sandbox="allow-scripts allow-modals"></iframe>
+      <button id="show-html">&lt;/&gt; HTML</button>
+    </aside>
+  </div>
+</body>
+</html>
+Wait — sandbox="allow-scripts" and srcdoc. If the iframe has allow-scripts and srcdoc, the parent and iframe have different origins effectively (srcdoc iframes inherit the parent origin in some browsers unless sandbox is present — actually with sandbox attribute, they're always treated as opaque origin, so they can't access parent). Let me verify: srcdoc + sandbox without allow-same-origin → opaque origin, so scripts run but can't access parent. allow-modals needed for alert(). That's exactly what we want for demonstrating "a button that does something".
+
+Let me write the model and mapping carefully.
+
+js
+// MODEL
+// block = 
+//   { kind:'text', type:'p'|'h1'|'h2'|'h3'|'quote'|'li', runs:[{text,marks}] }
+//   { kind:'element', tag:'button'|'a'|'img'|'input'|'hr', attrs:{...}, text?:'...' }
+//   { kind:'snippet', name:'card'|..., html:'<...>' }
+
+let model = [
+  { kind:'text', type:'h1', runs:[{text:'La mia pagina', marks:{}}] },
+  { kind:'text', type:'p', runs:[{text:'Clicca il pulsante qui sotto.', marks:{}}] },
+  { kind:'element', tag:'button', attrs:{ onclick:"alert('Ciao!')" }, text:'Clicca' },
+];
+Mapping function:
+
+js
+function renderBlockHTML(block) {
+  if (block.kind === 'text') return renderTextBlockHTML(block);
+  if (block.kind === 'element') return renderElementHTML(block);
+  if (block.kind === 'snippet') return block.html;
+}
+
+function renderTextBlockHTML(b) {
+  const inner = b.runs.map(renderRun).join('');
+  const tag = {p:'p', h1:'h1', h2:'h2', h3:'h3', quote:'blockquote', li:'div'}[b.type] || 'p';
+  return `<${tag}>${inner}</${tag}>`;
+}
+
+function renderRun(r) {
+  let t = escapeHTML(r.text);
+  const m = r.marks || {};
+  if (m.link) t = `<a href="${escapeAttr(m.link)}">${t}</a>`;
+  if (m.italic) t = `<em>${t}</em>`;
+  if (m.bold) t = `<strong>${t}</strong>`;
+  return t;
+}
+
+function renderElementHTML(b) {
+  const attrs = Object.entries(b.attrs || {})
+    .map(([k,v]) => ` ${k}="${escapeAttr(v)}"`).join('');
+  if (b.tag === 'img' || b.tag === 'hr' || b.tag === 'input') {
+    return `<${b.tag}${attrs}>`;
+  }
+  const inner = escapeHTML(b.text || '');
+  return `<${b.tag}${attrs}>${inner}</${b.tag}>`;
+}
+Now the editor view: each block renders as an editable unit. Text blocks are contenteditable. Element blocks are shown with a properties panel (or inline editing). Snippet blocks are shown as rendered preview.
+
+For an MVP, let me make:
+
+Text blocks: contenteditable, inline, like before
+
+Element blocks: displayed in a "chip" with an "edit" button that opens a small form (attributes editor)
+
+Snippet blocks: rendered preview with an "edit HTML" button
+
+The properties panel for a button element:
+
+text input
+
+onclick select: none / alert('...') / toggle visibility of another block / increment counter
+
+Actually let me keep it simple but demonstrative: for button, offer text + action (alert, or a custom JS line). For link, text + href. For image, src + alt. For input, type + placeholder.
+
+Actually, simplest approach that satisfies the user: each element has an inline "props" editor that appears when the block is selected. A small form with the relevant fields.
+
+For snippets, we insert pre-defined HTML strings. We can also let the user edit raw HTML of a snippet in a textarea.
+
+Let me structure the editor as:
+
+Each block in a wrapper div with a small toolbar on hover (move up/down, delete)
+
+For text blocks: contenteditable
+
+For element blocks: rendered + a "⚙" button to open props
+
+For snippet blocks: rendered + a "⚙" button to edit HTML
+
+The preview: iframe with srcdoc = full HTML document generated from model.
+
+Live update on input.
+
+Let me now write the full code.
+
+CSS should be clean, 3-column layout (palette | editor | preview), responsive collapse.
+
+Let me write the mapping for building the full document:
+
+js
+function buildDocument() {
+  const body = model.map(renderBlockHTML).join('\n');
+  return `<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Preview</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
+  button { padding: .5rem 1rem; border: 1px solid #0b5fff; background: #0b5fff; color: white; border-radius: 6px; cursor: pointer; }
+  a { color: #0b5fff; }
+  img { max-width: 100%; }
+  blockquote { border-left: 3px solid #0b5fff; margin: 0; padding-left: 1rem; color: #555; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin: .5rem 0; }
+  nav { display: flex; gap: 1rem; padding: .5rem 0; border-bottom: 1px solid #ddd; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border: 1px solid #ddd; padding: .5rem; text-align: left; }
+</style>
+</head>
+<body>
+${body}
+</body>
+</html>`;
+}
+Now for the snippets, define them as templates:
+
+js
+const SNIPPETS = {
+  card: `<div class="card">
+  <h3>Titolo della card</h3>
+  <p>Contenuto della card. Puoi modificarlo.</p>
+</div>`,
+  nav: `<nav>
+  <a href="#">Home</a>
+  <a href="#">Chi siamo</a>
+  <a href="#">Contatti</a>
+</nav>`,
+  form: `<form onsubmit="event.preventDefault(); alert('Inviato!');">
+  <label>Nome: <input type="text" name="nome"></label>
+  <button type="submit">Invia</button>
+</form>`,
+  table: `<table>
+  <thead><tr><th>Colonna 1</th><th>Colonna 2</th></tr></thead>
+  <tbody>
+    <tr><td>Dato 1</td><td>Dato 2</td></tr>
+    <tr><td>Dato 3</td><td>Dato 4</td></tr>
+  </tbody>
+</table>`,
+};
+And elements:
+
+js
+const ELEMENT_DEFAULTS = {
+  button: { tag:'button', text:'Clicca', attrs:{ onclick:"alert('Ciao!')" } },
+  a:      { tag:'a',      text:'Link',   attrs:{ href:'https://example.com' } },
+  img:    { tag:'img',    attrs:{ src:'https://picsum.photos/200/100', alt:'Immagine' } },
+  input:  { tag:'input',  attrs:{ type:'text', placeholder:'Scrivi qui...' } },
+  hr:     { tag:'hr',     attrs:{} },
+};
+Now the editing UI. Let me make the block wrapper have a small toolbar and inline editing.
+
+For text blocks, I'll use contenteditable and on blur re-read into model.
+
+Actually, I need to be careful with contenteditable and re-rendering. To avoid losing focus, I should only re-render on structural changes (add/remove/move block, change type) and update model on input without re-rendering.
+
+Let me do that pattern:
+
+renderEditor() — full re-render, called on structural changes
+
+Text input inside contenteditable → just update model, don't re-render
+
+Update preview always (debounced or immediate)
+
+Let me code it.
+
+js
+const editorEl = document.getElementById('editor');
+const previewEl = document.getElementById('preview');
+
+function renderEditor() {
+  editorEl.innerHTML = '';
+  model.forEach((block, idx) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'block';
+    wrap.dataset.idx = idx;
+    
+    // block toolbar
+    const tools = document.createElement('div');
+    tools.className = 'block-tools';
+    tools.innerHTML = `
+      <button data-act="up" title="Sposta su">↑</button>
+      <button data-act="down" title="Sposta giù">↓</button>
+      <button data-act="dup" title="Duplica">⎘</button>
+      <button data-act="del" title="Elimina">✕</button>
+    `;
+    wrap.appendChild(tools);
+    
+    // content
+    const content = document.createElement('div');
+    content.className = 'block-content';
+    
+    if (block.kind === 'text') {
+      content.innerHTML = renderTextBlockHTML(block);
+      const el = content.firstElementChild;
+      el.setAttribute('contenteditable', 'true');
+      el.addEventListener('input', () => {
+        model[idx].runs = parseInlineFromElement(el);
+        updatePreview();
+      });
+    } else if (block.kind === 'element') {
+      content.innerHTML = `<div class="render-preview">${renderElementHTML(block)}</div>`;
+      const btn = document.createElement('button');
+      btn.className = 'props-btn';
+      btn.textContent = '⚙ Modifica';
+      btn.addEventListener('click', () => openElementProps(idx));
+      content.appendChild(btn);
+    } else if (block.kind === 'snippet') {
+      content.innerHTML = `<div class="render-preview">${block.html}</div>`;
+      const btn = document.createElement('button');
+      btn.className = 'props-btn';
+      btn.textContent = '⚙ Modifica HTML';
+      btn.addEventListener('click', () => openSnippetProps(idx));
+      content.appendChild(btn);
+    }
+    
+    wrap.appendChild(content);
+    
+    // block tools handlers
+    tools.addEventListener('click', e => {
+      const act = e.target.dataset.act;
+      if (!act) return;
+      if (act === 'up' && idx > 0) { [model[idx-1], model[idx]] = [model[idx], model[idx-1]]; }
+      if (act === 'down' && idx < model.length-1) { [model[idx+1], model[idx]] = [model[idx], model[idx+1]]; }
+      if (act === 'dup') model.splice(idx+1, 0, JSON.parse(JSON.stringify(block)));
+      if (act === 'del') model.splice(idx, 1);
+      renderEditor();
+      updatePreview();
+    });
+    
+    editorEl.appendChild(wrap);
+  });
+}
+Wait — the block toolbar clicking on contenteditable might steal focus. That's fine for MVP.
+
+But there's a problem: wrap.dataset.idx gets stale after re-render, but we re-render fully so it's fine.
+
+For parseInlineFromElement, reuse from before:
+
+js
+function parseInlineFromElement(el) {
+  return parseInlineNodes(el.childNodes);
+}
+And parsing inline nodes (same as before):
+
+js
+const KNOWN_INLINE = { STRONG:'bold', B:'bold', EM:'italic', I:'italic' };
+
+function parseInlineNodes(nodes, marks = {}) {
+  const runs = [];
+  for (const node of nodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent) runs.push({ text: node.textContent, marks: {...marks} });
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      if (node.tagName === 'BR') {
+        runs.push({ text:'\n', marks:{...marks} });
+      } else if (node.tagName === 'A') {
+        const m = { ...marks, link: node.getAttribute('href') || '' };
+        runs.push(...parseInlineNodes(node.childNodes, m));
+      } else if (KNOWN_INLINE[node.tagName]) {
+        const m = { ...marks, [KNOWN_INLINE[node.tagName]]: true };
+        runs.push(...parseInlineNodes(node.childNodes, m));
+      } else {
+        runs.push(...parseInlineNodes(node.childNodes, marks));
+      }
+    }
+  }
+  return runs;
+}
+Now openElementProps(idx). Let me make a modal or use prompt. Prompt is simpler but ugly. Let me do a small inline dialog:
+
+Actually, for MVP, let me use a modal dialog with <dialog> element. That's clean.
+
+js
+function openElementProps(idx) {
+  const block = model[idx];
+  const dlg = document.createElement('dialog');
+  
+  let fields = '';
+  if (block.tag === 'button') {
+    fields = `
+      <label>Testo del pulsante: <input name="text" value="${escapeAttr(block.text||'')}"></label>
+      <label>Azione:
+        <select name="action">
+          <option value="alert" ${(block.attrs.onclick||'').startsWith('alert') ? 'selected' : ''}>Mostra un avviso</option>
+          <option value="none" ${!block.attrs.onclick ? 'selected' : ''}>Nessuna</option>
+          <option value="custom" ${block.attrs.onclick && !block.attrs.onclick.startsWith('alert') ? 'selected' : ''}>Personalizzata</option>
+        </select>
+      </label>
+      <label name="custom-wrap" style="display:none">JS personalizzato: <input name="custom" value="${escapeAttr(block.attrs.onclick||'')}"></label>
+    `;
+  } else if (block.tag === 'a') {
+    fields = `
+      <label>Testo del link: <input name="text" value="${escapeAttr(block.text||'')}"></label>
+      <label>URL: <input name="href" value="${escapeAttr(block.attrs.href||'')}"></label>
+    `;
+  } else if (block.tag === 'img') {
+    fields = `
+      <label>URL immagine: <input name="src" value="${escapeAttr(block.attrs.src||'')}"></label>
+      <label>Testo alternativo: <input name="alt" value="${escapeAttr(block.attrs.alt||'')}"></label>
+    `;
+  } else if (block.tag === 'input') {
+    fields = `
+      <label>Tipo: 
+        <select name="type">
+          <option value="text" ${block.attrs.type==='text'?'selected':''}>Testo</option>
+          <option value="email" ${block.attrs.type==='email'?'selected':''}>Email</option>
+          <option value="number" ${block.attrs.type==='number'?'selected':''}>Numero</option>
+          <option value="password" ${block.attrs.type==='password'?'selected':''}>Password</option>
+        </select>
+      </label>
+      <label>Placeholder: <input name="placeholder" value="${escapeAttr(block.attrs.placeholder||'')}"></label>
+    `;
+  } else if (block.tag === 'hr') {
+    fields = `<p>La riga orizzontale non ha attributi.</p>`;
+  }
+  
+  dlg.innerHTML = `
+    <form method="dialog">
+      <h3>Modifica &lt;${block.tag}&gt;</h3>
+      ${fields}
+      <menu>
+        <button value="cancel">Annulla</button>
+        <button value="ok" type="submit">Salva</button>
+      </menu>
+    </form>
+  `;
+  
+  document.body.appendChild(dlg);
+  dlg.showModal();
+  
+  // Toggle custom JS
+  const actionSel = dlg.querySelector('select[name="action"]');
+  if (actionSel) {
+    actionSel.addEventListener('change', () => {
+      dlg.querySelector('label[name="custom-wrap"]').style.display =
+        actionSel.value === 'custom' ? '' : 'none';
+    });
+  }
+  
+  dlg.addEventListener('close', () => {
+    if (dlg.returnValue !== 'ok') { dlg.remove(); return; }
+    
+    const get = n => dlg.querySelector(`[name="${n}"]`)?.value;
+    
+    if (block.tag === 'button') {
+      block.text = get('text') || 'Clicca';
+      const action = get('action');
+      if (action === 'alert') block.attrs.onclick = `alert('Ciao!')`;
+      else if (action === 'none') delete block.attrs.onclick;
+      else block.attrs.onclick = get('custom') || '';
+    } else if (block.tag === 'a') {
+      block.text = get('text') || 'Link';
+      block.attrs.href = get('href') || '#';
+    } else if (block.tag === 'img') {
+      block.attrs.src = get('src') || '';
+      block.attrs.alt = get('alt') || '';
+    } else if (block.tag === 'input') {
+      block.attrs.type = get('type') || 'text';
+      block.attrs.placeholder = get('placeholder') || '';
+    }
+    
+    dlg.remove();
+    renderEditor();
+    updatePreview();
+  });
+}
+For snippet editing:
+
+js
+function openSnippetProps(idx) {
+  const block = model[idx];
+  const dlg = document.createElement('dialog');
+  dlg.innerHTML = `
+    <form method="dialog">
+      <h3>Modifica HTML dello snippet</h3>
+      <textarea name="html" rows="10" style="width:100%;font-family:ui-monospace,monospace">${escapeHTML(block.html)}</textarea>
+      <menu>
+        <button value="cancel">Annulla</button>
+        <button value="ok">Salva</button>
+      </menu>
+    </form>
+  `;
+  document.body.appendChild(dlg);
+  dlg.showModal();
+  dlg.addEventListener('close', () => {
+    if (dlg.returnValue === 'ok') {
+      block.html = dlg.querySelector('[name="html"]').value;
+      renderEditor();
+      updatePreview();
+    }
+    dlg.remove();
+  });
+}
+Now the palette buttons:
+
+js
+document.querySelectorAll('[data-textblock]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    model.push({ kind:'text', type: btn.dataset.textblock, runs:[{ text:'Nuovo testo…', marks:{} }] });
+    renderEditor();
+    updatePreview();
+  });
+});
+
+document.querySelectorAll('[data-element]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const def = ELEMENT_DEFAULTS[btn.dataset.element];
+    model.push({ kind:'element', tag:def.tag, text:def.text, attrs:{ ...def.attrs } });
+    renderEditor();
+    updatePreview();
+  });
+});
+
+document.querySelectorAll('[data-snippet]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    model.push({ kind:'snippet', name: btn.dataset.snippet, html: SNIPPETS[btn.dataset.snippet] });
+    renderEditor();
+    updatePreview();
+  });
+});
+And updatePreview:
+
+js
+function updatePreview() {
+  previewEl.srcdoc = buildDocument();
+}
+Also, add a "show HTML" button that opens the generated HTML in a dialog.
+
+Also, add persistence (localStorage).
+
+Also, initial model.
+
+Let me also think about inline formatting. In the previous MVP there was execCommand('bold') etc. But with the new architecture, the toolbar operates on text blocks. Let me keep that: when a text block is focused and the user clicks B, we apply execCommand to it. Then on input, we re-parse. That works because execCommand operates on the actual DOM.
+
+But contenteditable on the inner element (h1, p, etc.) — applying bold should work. Let me keep the inline toolbar but make it context-aware: only enabled when a text block is focused.
+
+Actually, for MVP simplicity, let me keep inline toolbar with B/I/Link buttons that act on the current selection, and disable them if no text block focused.
+
+Let me write it all now.
+
+Actually wait — I should be careful about the preview updating on contenteditable input. Every keystroke re-generates the srcdoc, which reloads the iframe and can be janky. Let me debounce or use requestAnimationFrame. Simple debounce is fine.
+
+js
+let previewTimer = null;
+function updatePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => {
+    previewEl.srcdoc = buildDocument();
+  }, 150);
+}
+But we also want preview to update immediately on structural changes. Actually debounce is fine for all.
+
+Hmm, but srcdoc reloads the iframe each time. For MVP that's fine.
+
+Let me also add that sandbox="allow-scripts allow-modals allow-forms" so buttons work. Without allow-same-origin, scripts run in opaque origin. Good.
+
+Wait, there's a subtle issue: iframe with sandbox="allow-scripts" and srcdoc — the scripts can run. allow-modals needed for alert(). allow-forms needed for form submission (though with preventDefault it works without). Let me include all three.
+
+Actually for security, allow-scripts alone with srcdoc and no allow-same-origin gives a sandboxed origin — the script can't access the parent. That's exactly what we want. Good.
+
+Let me finalize the code. I want it to be complete and work.
+
+One thing: the editor rendering uses renderTextBlockHTML(block) which uses escapeHTML on runs. That's fine — when we set innerHTML, entities get decoded properly. Actually wait: escapeHTML(r.text) produces &lt; etc. But then the browser parsing innerHTML will decode &lt; to < in the DOM. So <p>Ciao &lt;b&gt;</p> → DOM <p>Ciao <b></p>... hmm no, the <b> becomes a real element.
+
+Wait, let me trace this carefully:
+
+run.text = "Ciao <b>mondo</b>" (user typed this as literal text)
+
+escapeHTML(run.text) = "Ciao <b>mondo</b>"
+
+rendered = "<p>Ciao <b>mondo</b></p>"
+
+set as innerHTML → browser decodes entities → DOM: <p>Ciao <b>mondo</b></p> where <b> is text (not element) because it was &lt; in source
+
+Wait no. If innerHTML is "<p>Ciao &lt;b&gt;mondo&lt;/b&gt;</p>", the browser sees <p> as tag, then "Ciao " as text, then &lt; as text <, then b, then &gt; as text >, etc. So DOM is: <p> containing text node "Ciao <b>mondo</b>" — where the <b> is text content, not an element. Good.
+
+But then when the user edits, we call parseInlineFromElement on the <p> element. Its childNodes are: one text node "Ciao <b>mondo</b>". Wait no — the text node contains literal text "<b>" — no, it contains the decoded text. The DOM text node's textContent would be "Ciao <b>mondo</b>". Because the entities were decoded.
+
+Hmm, actually: document.createElement('p').innerHTML = 'Ciao &lt;b&gt;' → the p's textContent is "Ciao <b>". Yes. So round-trip works.
+
+Good. So escapeHTML on render + parse textContent on read = correct round-trip for literal < in text.
+
+But wait — what about the contenteditable? When the user types < in a contenteditable, the browser inserts it as text (or &lt; in HTML but as text node in DOM). Then when we read textContent, it's <. Good. Then we escape it on render. Good.
+
+But what if the user pastes rich HTML? Then paste could introduce <b> elements. Our parser handles that: KNOWN_INLINE catches <b> → marks.bold. Good.
+
+OK, this should work. Let me also make sure the block wrapper doesn't interfere with contenteditable focus.
+
+Let me write the full thing now.
+
+Also I should address the user's conceptual framing: "UI that allows me to do a certain thing OR preset code". I'll explain both paths explicitly.
+
+Let me also add a brief explanation at the top of my response about the two paths and the architecture, then the code.
+
+Let me now write the final code carefully.
+
+Actually, one more consideration: for a "button that does something", the most common thing is "toggle visibility of something" or "alert". Let me support both in the props modal:
+
+Alert: shows alert
+
+Toggle: hides/shows a specific element (by selector)
+
+Custom: free JS
+
+Hmm, that adds complexity. Let me keep it simple: alert, none, custom JS. The custom JS lets them do anything.
+
+OK let me write it.
+
+Also: initial model should demonstrate the "button that does something" so they see it working out of the box.
+
+Let me write the complete HTML file.
+
+For the layout, I'll do:
+
+Palette on left (fixed width)
+
+Editor in center (flex)
+
+Preview on right (flex)
+
+Responsive: stack on narrow screens
+
+Let me write it.
+
+One more thing: when a text block's content is empty on parse, we might get empty runs. That's fine; renders as empty.
+
+Let me also handle the case where the user presses Enter in a text block — should create a new paragraph after. That was in the previous MVP. Let me include it.
+
+Actually, pressing Enter inside a contenteditable <p> creates <div> inside by default (browser behavior), which messes up our model. Better to intercept Enter: prevent default, add a new text block after, focus it.
+
+js
+content.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    model.splice(idx+1, 0, { kind:'text', type:'p', runs:[] });
+    renderEditor();
+    updatePreview();
+    // focus new block
+    const newEl = editorEl.querySelectorAll('[contenteditable]')[idx+1];
+    if (newEl) {
+      newEl.focus();
+    }
+  }
+});
+Hmm but the focus index isn't straightforward because some blocks aren't contenteditable. Let me just focus the block at position idx+1 by querying all blocks and finding the contenteditable inside.
+
+js
+setTimeout(() => {
+  const blocks = editorEl.querySelectorAll('.block');
+  const next = blocks[idx+1];
+  const ed = next?.querySelector('[contenteditable]');
+  if (ed) {
+    ed.focus();
+    // place cursor at start
+    const r = document.createRange();
+    r.selectNodeContents(ed);
+    r.collapse(true);
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+  }
+}, 0);
+OK, this is getting long but it's a real editor. Let me finalize.
+
+Actually, I realize I should also demonstrate the point the user made: "avere una porzione di codice pre-impostata che mi permetta di farlo". So snippets are exactly that. Good.
+
+Let me write the final code now. I'll keep it clean and commented.
+
+Let me also think about whether the response should include the conceptual explanation first or just the code. Given the depth of previous exchanges, I'll add a brief but substantive explanation of the architecture and the two paths, then the full code.
+
+I need to be careful with the size. The code will be long. Let me write it efficiently.
+
+Let me finalize.
+
+Hai centrato il punto: per costruire un editor HTML in HTML servono due sorgenti di elementi:
+
+UI che genera elementi — palette di strumenti: “inserisci pulsante”, “inserisci link”, “inserisci immagine”. Ogni comando produce un blocco nel modello.
+
+Snippet pre-impostati — porzioni di HTML già scritte che puoi inserire e poi modificare.
+
+Entrambe confluiscono nello stesso posto: il modello. Il modello è la fonte di verità; l’HTML è il risultato della mappatura modello→HTML; la preview lo esegue in un iframe isolato. È lo stesso schema di prima, esteso a elementi arbitrari.
+
+Ecco l’MVP che estende il precedente a editor HTML vero: tre pannelli (palette | editor | preview), blocco di testo editabile, elementi configurati via form, snippet HTML inseribili e modificabili.
+
+html
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Editor HTML in HTML</title>
+<style>
+  :root { --accent:#0b5fff; --border:#e2e2e2; --muted:#666; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; color:#1a1a1a; background:#fafafa; }
+  .app { display:grid; grid-template-columns: 200px 1fr 1fr; gap:0; height:100vh; }
+  aside, main { overflow:auto; padding:1rem; border-right:1px solid var(--border); }
+  aside:last-child { border-right:none; }
+  h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:1rem 0 .5rem; }
+  aside button { display:block; width:100%; text-align:left; padding:.5rem .7rem; margin-bottom:.3rem;
+    border:1px solid var(--border); background:white; border-radius:6px; cursor:pointer; font-size:.9rem; }
+  aside button:hover { border-color:var(--accent); color:var(--accent); }
+  #editor { max-width: 720px; }
+  .block { position:relative; padding:.4rem .6rem; border:1px solid transparent; border-radius:6px; margin-bottom:.3rem; }
+  .block:hover { border-color:var(--border); background:white; }
+  .block-tools { position:absolute; top:-10px; right:8px; display:none; gap:2px;
+    background:white; border:1px solid var(--border); border-radius:6px; padding:2px; }
+  .block:hover .block-tools { display:flex; }
+  .block-tools button { border:none; background:white; padding:2px 6px; cursor:pointer; font-size:.8rem; border-radius:3px; }
+  .block-tools button:hover { background:#f0f0f0; }
+  .block [contenteditable] { outline:none; padding:2px 0; min-height:1.4em; }
+  .block [contenteditable]:focus { background:#f8faff; border-radius:3px; }
+  .render-preview { padding:.5rem; border:1px dashed var(--border); border-radius:6px; background:#fcfcfc; }
+  .props-btn { margin-top:.3rem; font-size:.8rem; padding:.2rem .5rem; border:1px solid var(--border);
+    background:white; border-radius:4px; cursor:pointer; }
+  #preview { width:100%; height:100%; border:1px solid var(--border); border-radius:8px; background:white; }
+  dialog { border:1px solid var(--border); border-radius:10px; padding:1.2rem; min-width:320px; }
+  dialog label { display:block; margin:.5rem 0; font-size:.9rem; }
+  dialog input, dialog select, dialog textarea { display:block; width:100%; margin-top:.2rem;
+    padding:.4rem; border:1px solid var(--border); border-radius:4px; font-family:inherit; }
+  dialog menu { display:flex; gap:.5rem; justify-content:flex-end; padding:0; margin:1rem 0 0; }
+  dialog menu button { padding:.4rem .9rem; border:1px solid var(--border); background:white;
+    border-radius:6px; cursor:pointer; }
+  dialog menu button[value="ok"] { background:var(--accent); color:white; border-color:var(--accent); }
+  .toolbar-inline { display:flex; gap:4px; margin-bottom:.5rem; padding:.4rem;
+    border:1px solid var(--border); border-radius:6px; background:white; }
+  .toolbar-inline button { padding:.3rem .6rem; border:1px solid transparent; background:white;
+    border-radius:4px; cursor:pointer; font-size:.85rem; }
+  .toolbar-inline button:hover { background:#f0f0f0; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h2>Testo</h2>
+    <button data-textblock="p">¶ Paragrafo</button>
+    <button data-textblock="h1">H1</button>
+    <button data-textblock="h2">H2</button>
+    <button data-textblock="quote">" Citazione</button>
+
+    <h2>Elementi</h2>
+    <button data-element="button">🔘 Button</button>
+    <button data-element="a">🔗 Link</button>
+    <button data-element="img">🖼 Immagine</button>
+    <button data-element="input">⌨ Input</button>
+    <button data-element="hr">— Riga</button>
+
+    <h2>Snippet</h2>
+    <button data-snippet="card">🃏 Card</button>
+    <button data-snippet="nav">🧭 Navigazione</button>
+    <button data-snippet="form">📝 Form</button>
+    <button data-snippet="table">📊 Tabella</button>
+
+    <h2>Azioni</h2>
+    <button id="show-html">&lt;/&gt; Vedi HTML</button>
+    <button id="save">💾 Salva</button>
+    <button id="load">📂 Carica</button>
+  </aside>
+
+  <main>
+    <div class="toolbar-inline" role="toolbar" aria-label="Formattazione testo">
+      <button data-inline="bold"><strong>B</strong></button>
+      <button data-inline="italic"><em>I</em></button>
+      <button data-inline="link">🔗</button>
+    </div>
+    <div id="editor"></div>
+  </main>
+
+  <aside>
+    <iframe id="preview" sandbox="allow-scripts allow-modals allow-forms"></iframe>
+  </aside>
+</div>
+
+<script>
+/* ============================================================
+   MODELLO
+   block =
+     { kind:'text',    type:'p'|'h1'|'h2'|'quote', runs:[{text,marks}] }
+     { kind:'element', tag:'button'|'a'|'img'|'input'|'hr',
+                       text?:string, attrs:{...} }
+     { kind:'snippet', name:string, html:string }
+   Il modello non conosce né HTML né CSS: descrive significato.
+   ============================================================ */
+
+const ELEMENT_DEFAULTS = {
+  button: { tag:'button', text:'Clicca', attrs:{ onclick:"alert('Ciao!')" } },
+  a:      { tag:'a',      text:'Link',   attrs:{ href:'https://example.com' } },
+  img:    { tag:'img',    attrs:{ src:'https://picsum.photos/200/100', alt:'Immagine' } },
+  input:  { tag:'input',  attrs:{ type:'text', placeholder:'Scrivi qui...' } },
+  hr:     { tag:'hr',     attrs:{} },
+};
+
+const SNIPPETS = {
+  card: `<div class="card"><h3>Titolo card</h3><p>Contenuto della card.</p></div>`,
+  nav:  `<nav><a href="#">Home</a><a href="#">Chi siamo</a><a href="#">Contatti</a></nav>`,
+  form: `<form onsubmit="event.preventDefault();alert('Inviato!');">
+  <label>Nome: <input type="text" name="nome"></label>
+  <button type="submit">Invia</button>
+</form>`,
+  table:`<table><thead><tr><th>A</th><th>B</th></tr></thead>
+  <tbody><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></tbody></table>`,
+};
+
+let model = [
+  { kind:'text', type:'h1', runs:[{text:'La mia pagina', marks:{}}] },
+  { kind:'text', type:'p', runs:[{text:'Clicca il pulsante qui sotto.', marks:{}}] },
+  { kind:'element', tag:'button', text:'Clicca',
+    attrs:{ onclick:"alert('Ciao dal pulsante!')" } },
+];
+
+/* ============================================================
+   MAPPING MODELLO → HTML
+   Qui si decide cosa significa ogni blocco sul target HTML.
+   ============================================================ */
+
+function escapeHTML(s='') {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderRun(r) {
+  let t = escapeHTML(r.text || '');
+  const m = r.marks || {};
+  if (m.link)   t = `<a href="${escapeHTML(m.link)}">${t}</a>`;
+  if (m.italic) t = `<em>${t}</em>`;
+  if (m.bold)   t = `<strong>${t}</strong>`;
+  return t;
+}
+
+const TEXT_TAGS = { p:'p', h1:'h1', h2:'h2', quote:'blockquote' };
+
+function renderBlockHTML(b) {
+  if (b.kind === 'text') {
+    const tag = TEXT_TAGS[b.type] || 'p';
+    const inner = (b.runs || []).map(renderRun).join('');
+    return `<${tag}>${inner}</${tag}>`;
+  }
+  if (b.kind === 'element') {
+    const attrs = Object.entries(b.attrs || {})
+      .map(([k,v]) => ` ${k}="${escapeHTML(v)}"`).join('');
+    if (['img','hr','input'].includes(b.tag)) return `<${b.tag}${attrs}>`;
+    return `<${b.tag}${attrs}>${escapeHTML(b.text || '')}</${b.tag}>`;
+  }
+  if (b.kind === 'snippet') return b.html;
+  return '';
+}
+
+function buildDocument() {
+  const body = model.map(renderBlockHTML).join('\n');
+  return `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
+<title>Preview</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 1.5rem auto;
+         padding: 0 1rem; line-height: 1.6; color:#1a1a1a; }
+  button { padding:.5rem 1rem; border:1px solid #0b5fff; background:#0b5fff;
+           color:white; border-radius:6px; cursor:pointer; }
+  a { color:#0b5fff; } img { max-width:100%; }
+  blockquote { border-left:3px solid #0b5fff; margin:.5rem 0; padding-left:1rem; color:#555; }
+  .card { border:1px solid #ddd; border-radius:8px; padding:1rem; margin:.5rem 0; }
+  nav { display:flex; gap:1rem; padding:.5rem 0; border-bottom:1px solid #ddd; }
+  table { border-collapse:collapse; width:100%; }
+  td, th { border:1px solid #ddd; padding:.5rem; text-align:left; }
+</style></head><body>${body}</body></html>`;
+}
+
+/* ============================================================
+   MAPPING HTML → MODELLO (inverso)
+   ============================================================ */
+const KNOWN_INLINE = { STRONG:'bold', B:'bold', EM:'italic', I:'italic' };
+
+function parseInlineNodes(nodes, marks = {}) {
+  const runs = [];
+  for (const node of nodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent) runs.push({ text: node.textContent, marks: {...marks} });
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      if (node.tagName === 'BR') runs.push({ text:'\n', marks:{...marks} });
+      else if (node.tagName === 'A')
+        runs.push(...parseInlineNodes(node.childNodes, { ...marks, link: node.getAttribute('href') || '' }));
+      else if (KNOWN_INLINE[node.tagName])
+        runs.push(...parseInlineNodes(node.childNodes, { ...marks, [KNOWN_INLINE[node.tagName]]: true }));
+      else
+        runs.push(...parseInlineNodes(node.childNodes, marks));
+    }
+  }
+  return runs;
+}
+
+/* ============================================================
+   RENDER EDITOR
+   Ogni blocco ha: contenuto editabile + mini-toolbar (su/giù/dup/elimina).
+   ============================================================ */
+const editorEl = document.getElementById('editor');
+const previewEl = document.getElementById('preview');
+
+let previewTimer = null;
+function updatePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => { previewEl.srcdoc = buildDocument(); }, 120);
+}
+
+function renderEditor() {
+  editorEl.innerHTML = '';
+  model.forEach((block, idx) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'block';
+
+    const tools = document.createElement('div');
+    tools.className = 'block-tools';
+    tools.innerHTML = `<button data-act="up" title="Su">↑</button>
+      <button data-act="down" title="Giù">↓</button>
+      <button data-act="dup" title="Duplica">⎘</button>
+      <button data-act="del" title="Elimina">✕</button>`;
+    tools.addEventListener('click', e => {
+      const act = e.target.dataset.act;
+      if (!act) return;
+      if (act === 'up'   && idx > 0)               [model[idx-1], model[idx]] = [model[idx], model[idx-1]];
+      if (act === 'down' && idx < model.length-1)  [model[idx+1], model[idx]] = [model[idx], model[idx+1]];
+      if (act === 'dup')  model.splice(idx+1, 0, JSON.parse(JSON.stringify(block)));
+      if (act === 'del')  model.splice(idx, 1);
+      renderEditor(); updatePreview();
+    });
+    wrap.appendChild(tools);
+
+    const content = document.createElement('div');
+
+    if (block.kind === 'text') {
+      content.innerHTML = renderBlockHTML(block);
+      const el = content.firstElementChild;
+      el.setAttribute('contenteditable', 'true');
+      el.addEventListener('input', () => {
+        model[idx].runs = parseInlineNodes(el.childNodes);
+        updatePreview();
+      });
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          model.splice(idx+1, 0, { kind:'text', type:'p', runs:[] });
+          renderEditor(); updatePreview();
+          setTimeout(() => focusBlock(idx+1), 0);
+        }
+      });
+    } else if (block.kind === 'element') {
+      content.innerHTML = `<div class="render-preview">${renderBlockHTML(block)}</div>`;
+      const btn = document.createElement('button');
+      btn.className = 'props-btn';
+      btn.textContent = '⚙ Configura';
+      btn.addEventListener('click', () => openElementProps(idx));
+      content.appendChild(btn);
+    } else if (block.kind === 'snippet') {
+      content.innerHTML = `<div class="render-preview">${block.html}</div>`;
+      const btn = document.createElement('button');
+      btn.className = 'props-btn';
+      btn.textContent = '⚙ Modifica HTML';
+      btn.addEventListener('click', () => openSnippetProps(idx));
+      content.appendChild(btn);
+    }
+
+    wrap.appendChild(content);
+    editorEl.appendChild(wrap);
+  });
+}
+
+function focusBlock(idx) {
+  const wrap = editorEl.querySelectorAll('.block')[idx];
+  const ed = wrap?.querySelector('[contenteditable]');
+  if (!ed) return;
+  ed.focus();
+  const r = document.createRange();
+  r.selectNodeContents(ed); r.collapse(false);
+  const s = window.getSelection();
+  s.removeAllRanges(); s.addRange(r);
+}
+
+/* ============================================================
+   FORM DI CONFIGURAZIONE PER ELEMENTI
+   La "UI che ti permette di fare una certa cosa".
+   ============================================================ */
+function openElementProps(idx) {
+  const block = model[idx];
+  const dlg = document.createElement('dialog');
+  let fields = '';
+
+  if (block.tag === 'button') {
+    const onclick = block.attrs.onclick || '';
+    const isAlert = onclick.startsWith('alert');
+    fields = `
+      <label>Testo: <input name="text" value="${escapeHTML(block.text||'')}"></label>
+      <label>Azione:
+        <select name="action">
+          <option value="alert" ${isAlert?'selected':''}>Mostra avviso</option>
+          <option value="none"  ${!onclick?'selected':''}>Nessuna</option>
+          <option value="custom"${onclick && !isAlert?'selected':''}>Personalizzata</option>
+        </select></label>
+      <label name="custom-wrap" style="display:${!isAlert&&onclick?'block':'none'}">
+        JS: <input name="custom" value="${escapeHTML(isAlert?'':onclick)}"></label>`;
+  } else if (block.tag === 'a') {
+    fields = `<label>Testo: <input name="text" value="${escapeHTML(block.text||'')}"></label>
+              <label>URL: <input name="href" value="${escapeHTML(block.attrs.href||'')}"></label>`;
+  } else if (block.tag === 'img') {
+    fields = `<label>URL: <input name="src" value="${escapeHTML(block.attrs.src||'')}"></label>
+              <label>Alt: <input name="alt" value="${escapeHTML(block.attrs.alt||'')}"></label>`;
+  } else if (block.tag === 'input') {
+    fields = `<label>Tipo:
+        <select name="type">
+          ${['text','email','number','password'].map(t =>
+            `<option value="${t}" ${block.attrs.type===t?'selected':''}>${t}</option>`).join('')}
+        </select></label>
+      <label>Placeholder: <input name="placeholder" value="${escapeHTML(block.attrs.placeholder||'')}"></label>`;
+  } else {
+    fields = `<p>Nessun attributo.</p>`;
+  }
+
+  dlg.innerHTML = `<form method="dialog"><h3>Modifica &lt;${block.tag}&gt;</h3>
+    ${fields}<menu><button value="cancel">Annulla</button>
+    <button value="ok" type="submit">Salva</button></menu></form>`;
+  document.body.appendChild(dlg); dlg.showModal();
+
+  const actionSel = dlg.querySelector('select[name="action"]');
+  if (actionSel) actionSel.addEventListener('change', () => {
+    dlg.querySelector('label[name="custom-wrap"]').style.display =
+      actionSel.value === 'custom' ? 'block' : 'none';
+  });
+
+  dlg.addEventListener('close', () => {
+    if (dlg.returnValue !== 'ok') { dlg.remove(); return; }
+    const get = n => dlg.querySelector(`[name="${n}"]`)?.value;
+    if (block.tag === 'button') {
+      block.text = get('text') || 'Clicca';
+      const a = get('action');
+      if (a === 'alert') block.attrs.onclick = `alert('Ciao!')`;
+      else if (a === 'none') delete block.attrs.onclick;
+      else block.attrs.onclick = get('custom') || '';
+    } else if (block.tag === 'a') {
+      block.text = get('text') || 'Link';
+      block.attrs.href = get('href') || '#';
+    } else if (block.tag === 'img') {
+      block.attrs.src = get('src') || '';
+      block.attrs.alt = get('alt') || '';
+    } else if (block.tag === 'input') {
+      block.attrs.type = get('type') || 'text';
+      block.attrs.placeholder = get('placeholder') || '';
+    }
+    dlg.remove(); renderEditor(); updatePreview();
+  });
+}
+
+function openSnippetProps(idx) {
+  const block = model[idx];
+  const dlg = document.createElement('dialog');
+  dlg.innerHTML = `<form method="dialog"><h3>Modifica HTML dello snippet</h3>
+    <textarea name="html" rows="10" style="font-family:ui-monospace,monospace">${escapeHTML(block.html)}</textarea>
+    <menu><button value="cancel">Annulla</button>
+    <button value="ok" type="submit">Salva</button></menu></form>`;
+  document.body.appendChild(dlg); dlg.showModal();
+  dlg.addEventListener('close', () => {
+    if (dlg.returnValue === 'ok') {
+      block.html = dlg.querySelector('[name="html"]').value;
+      renderEditor(); updatePreview();
+    }
+    dlg.remove();
+  });
+}
+
+/* ============================================================
+   PALETTE — "la UI che ti permette di fare una certa cosa"
+   ============================================================ */
+document.querySelectorAll('[data-textblock]').forEach(btn =>
+  btn.addEventListener('click', () => {
+    model.push({ kind:'text', type: btn.dataset.textblock, runs:[{ text:'Nuovo testo…', marks:{} }] });
+    renderEditor(); updatePreview();
+  }));
+
+document.querySelectorAll('[data-element]').forEach(btn =>
+  btn.addEventListener('click', () => {
+    const d = ELEMENT_DEFAULTS[btn.dataset.element];
+    model.push({ kind:'element', tag:d.tag, text:d.text, attrs:{ ...d.attrs } });
+    renderEditor(); updatePreview();
+  }));
+
+document.querySelectorAll('[data-snippet]').forEach(btn =>
+  btn.addEventListener('click', () => {
+    model.push({ kind:'snippet', name: btn.dataset.snippet, html: SNIPPETS[btn.dataset.snippet] });
+    renderEditor(); updatePreview();
+  }));
+
+/* ============================================================
+   FORMATTAZIONE INLINE (su blocco di testo attivo)
+   ============================================================ */
+document.querySelectorAll('[data-inline]').forEach(btn =>
+  btn.addEventListener('mousedown', e => e.preventDefault()));
+
+document.querySelectorAll('[data-inline]').forEach(btn =>
+  btn.addEventListener('click', e => {
+    e.preventDefault();
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const node = sel.anchorNode?.nodeType === 1 ? sel.anchorNode : sel.anchorNode?.parentElement;
+    if (!node?.closest('[contenteditable="true"]')) return;
+    const cmd = btn.dataset.inline;
+    if (cmd === 'bold') document.execCommand('bold');
+    else if (cmd === 'italic') document.execCommand('italic');
+    else if (cmd === 'link') {
+      const url = prompt('URL:', 'https://');
+      if (url) document.execCommand('createLink', false, url);
+    }
+    // sync del modello
+    const ed = node.closest('[contenteditable="true"]');
+    const idx = [...editorEl.querySelectorAll('.block')]
+      .findIndex(b => b.contains(ed));
+    if (idx >= 0) model[idx].runs = parseInlineNodes(ed.childNodes);
+    updatePreview();
+  }));
+
+/* ============================================================
+   AZIONI: vedi HTML, salva, carica
+   ============================================================ */
+document.getElementById('show-html').addEventListener('click', () => {
+  const dlg = document.createElement('dialog');
+  dlg.innerHTML = `<form method="dialog"><h3>HTML generato dal modello</h3>
+    <textarea rows="18" style="width:100%;font-family:ui-monospace,monospace">${escapeHTML(buildDocument())}</textarea>
+    <menu><button value="ok">Chiudi</button></menu></form>`;
+  document.body.appendChild(dlg); dlg.showModal();
+  dlg.addEventListener('close', () => dlg.remove());
+});
+
+const KEY = 'html-editor-model';
+document.getElementById('save').addEventListener('click', () => {
+  localStorage.setItem(KEY, JSON.stringify(model));
+});
+document.getElementById('load').addEventListener('click', () => {
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return;
+  try { model = JSON.parse(raw); renderEditor(); updatePreview(); }
+  catch(e) { alert('Errore nel caricamento'); }
+});
+
+/* Init */
+renderEditor();
+updatePreview();
+</script>
+</body>
+</html>
+Cosa dimostra, rispetto alla tua domanda
+“UI che mi permette di fare una certa cosa” → la palette a sinistra. Ogni bottone inserisce un blocco nel modello:
+
+data-element="button" → crea { kind:'element', tag:'button', text:'Clicca', attrs:{ onclick:"alert('Ciao!')" } }
+
+data-textblock="h1" → crea un blocco di testo di tipo titolo
+
+ecc.
+
+Poi il form di configurazione (openElementProps) è l’altra metà della UI: ti permette di dire cosa deve fare quel pulsante (azione alert / nessuna / JS personalizzato), che testo mostrare, ecc. È la traduzione diretta di “voglio un tasto che faccia una certa cosa”.
+
+“Porzione di codice pre-impostata” → gli snippet. Sono stringhe HTML predefinite (SNIPPETS.card, SNIPPETS.form…) inserite come kind:'snippet'. Puoi anche modificarle via openSnippetProps, che apre un <textarea> con l’HTML grezzo.
+
+Il modello è la fonte di verità, non l’HTML. Puoi vedere la differenza:
+
+i blocchi di testo sono { kind:'text', type:'h1', runs:[...] } — nessun tag;
+
+gli elementi sono { kind:'element', tag:'button', attrs:{...} } — il tag è un dato, non sintassi;
+
+gli snippet sono { kind:'snippet', html:'<...>' } — l’unico punto dove l’HTML è memorizzato come stringa, perché è il contenuto pre-impostato che l’utente ha scelto.
+
+Il mapping renderBlockHTML decide come ogni tipo diventa HTML. La preview esegue l’HTML generato in un <iframe sandbox>, quindi il pulsante funziona davvero (alert), i form si inviano, ma nulla può toccare la pagina dell’editor.
+
+I due percorsi, in sintesi
+Percorso	Come funziona	Dove vive nel codice
+UI → elemento	Scegli “Button” dalla palette → il modello riceve un blocco element → configuri via form → il renderer genera <button onclick="…">	ELEMENT_DEFAULTS, openElementProps, renderBlockHTML
+Snippet pre-impostato	Scegli “Form” dalla palette → il modello riceve un blocco snippet con HTML già scritto → puoi modificarlo via textarea	SNIPPETS, openSnippetProps
+Entrambi finiscono nello stesso modello e nello stesso mapping. È esattamente la separazione che cercavi: l’utente pensa in termini di “voglio un pulsante che faccia X”, la UI traduce in un blocco, il mapping traduce in HTML. Se domani vuoi esportare in Markdown o in JSX, cambi il mapping e il modello resta valido.
+
+Se vuoi il prossimo passo, posso aggiungere: blocchi contenitore (section/div con figli annidati), export/import del JSON del modello, oppure un blocco “HTML personalizzato” che accetta markup arbitrario con sanitizzazione via DOMPurify.
