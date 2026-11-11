@@ -19,6 +19,7 @@ import {
 } from './types/editor';
 import { LessonsLaboratory } from './components/LessonsLaboratory';
 import { SplitHtmlCleanerStudio } from './components/SplitHtmlCleanerStudio';
+import { UniversalAppBuilderStudio } from './components/UniversalAppBuilderStudio';
 import {
   ArrowUp,
   ArrowDown,
@@ -41,13 +42,15 @@ import {
   Braces,
   Columns,
   Blocks,
+  Package,
 } from 'lucide-react';
 import { INITIAL_MODEL } from './types/editor';
 
 const STORAGE_KEY = 'quine_html_studio_model_v1';
 
 export function App() {
-  const [workspaceMode, setWorkspaceMode] = useState<'split-cleaner' | 'block-model'>('split-cleaner');
+  const [workspaceMode, setWorkspaceMode] = useState<'app-builder' | 'split-cleaner' | 'block-model'>('app-builder');
+  const [externalHtmlForCleaner, setExternalHtmlForCleaner] = useState<string | null>(null);
 
   const [model, setModel] = useState<EditorBlock[]>(() => {
     try {
@@ -552,7 +555,19 @@ export function App() {
 
             <div className="flex flex-wrap items-center gap-3">
               {/* Segmented Workspace Mode Switcher */}
-              <div className="flex items-center gap-1 p-1 bg-slate-200/80 rounded-lg">
+              <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-200/80 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceMode('app-builder')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                    workspaceMode === 'app-builder'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Package className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Costruttore Universale di App (Archivio Pacchetti)</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setWorkspaceMode('split-cleaner')}
@@ -619,8 +634,20 @@ export function App() {
             </div>
           </div>
 
-          {workspaceMode === 'split-cleaner' ? (
-            <SplitHtmlCleanerStudio onNotify={triggerToast} />
+          {workspaceMode === 'app-builder' ? (
+            <UniversalAppBuilderStudio
+              onNotify={triggerToast}
+              onSendToSplitCleaner={(htmlStr) => {
+                setExternalHtmlForCleaner(htmlStr);
+                setWorkspaceMode('split-cleaner');
+              }}
+            />
+          ) : workspaceMode === 'split-cleaner' ? (
+            <SplitHtmlCleanerStudio
+              onNotify={triggerToast}
+              externalHtmlToLoad={externalHtmlForCleaner}
+              onClearExternalHtml={() => setExternalHtmlForCleaner(null)}
+            />
           ) : (
             /* 3-Column Studio Layout: Palette (Left) | Visual Block Editor (Center) | Live Target / Inspector (Right) */
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch min-h-[640px]">
