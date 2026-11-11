@@ -18,6 +18,7 @@ import {
   parseInlineNodes,
 } from './types/editor';
 import { LessonsLaboratory } from './components/LessonsLaboratory';
+import { SplitHtmlCleanerStudio } from './components/SplitHtmlCleanerStudio';
 import {
   ArrowUp,
   ArrowDown,
@@ -38,12 +39,16 @@ import {
   Eye,
   FileCode,
   Braces,
+  Columns,
+  Blocks,
 } from 'lucide-react';
 import { INITIAL_MODEL } from './types/editor';
 
 const STORAGE_KEY = 'quine_html_studio_model_v1';
 
 export function App() {
+  const [workspaceMode, setWorkspaceMode] = useState<'split-cleaner' | 'block-model'>('split-cleaner');
+
   const [model, setModel] = useState<EditorBlock[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -532,58 +537,93 @@ export function App() {
       {/* Main Content Container */}
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 pt-6 space-y-12">
         {/* Intro Strip */}
-        <section id="studio-workspace" className="space-y-4">
+        <section id="studio-workspace" className="space-y-5">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-slate-200 pb-4">
             <div>
               <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
-                <span>Costruzione Visuale & Programmazione Dichiarativa</span>
+                <span>Costruzione Visuale, Parsing Bidirezionale &amp; Sanitizzazione</span>
                 <span aria-hidden="true">·</span>
-                <span>UI → Modello → Mapping → Target Sandbox</span>
+                <span>DOM (WYSIWYG) ↔ Parser ↔ Sorgente HTML ↔ Target Sandbox</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
                 Editor di HTML scritto in HTML
               </h1>
             </div>
 
-            {/* Workspace Persistence Actions */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setFullHtmlModalOpen(true)}
-                className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
-              >
-                <Code className="w-3.5 h-3.5 text-blue-600" />
-                <span>&lt;/&gt; Vedi HTML</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveLocal}
-                className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
-              >
-                <Save className="w-3.5 h-3.5 text-slate-600" />
-                <span>Salva</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleLoadLocal}
-                className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
-              >
-                <FolderOpen className="w-3.5 h-3.5 text-slate-600" />
-                <span>Carica</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleResetDefault}
-                className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Ripristina</span>
-              </button>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Segmented Workspace Mode Switcher */}
+              <div className="flex items-center gap-1 p-1 bg-slate-200/80 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceMode('split-cleaner')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                    workspaceMode === 'split-cleaner'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Columns className="w-3.5 h-3.5 text-red-600" />
+                  <span>Split View: WYSIWYG ↔ Sorgente &amp; Cleaner</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceMode('block-model')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                    workspaceMode === 'block-model'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Blocks className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Architettura a Blocchi (Modello JSON)</span>
+                </button>
+              </div>
+
+              {/* Workspace Persistence Actions (shown in Block Model mode) */}
+              {workspaceMode === 'block-model' && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFullHtmlModalOpen(true)}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    <Code className="w-3.5 h-3.5 text-blue-600" />
+                    <span>&lt;/&gt; Vedi HTML</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveLocal}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    <Save className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Salva</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLoadLocal}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Carica</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetDefault}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Ripristina</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* 3-Column Studio Layout: Palette (Left) | Visual Block Editor (Center) | Live Target / Inspector (Right) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch min-h-[640px]">
+          {workspaceMode === 'split-cleaner' ? (
+            <SplitHtmlCleanerStudio onNotify={triggerToast} />
+          ) : (
+            /* 3-Column Studio Layout: Palette (Left) | Visual Block Editor (Center) | Live Target / Inspector (Right) */
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch min-h-[640px]">
             {/* LEFT PANEL: Palette ("La UI che ti permette di fare una certa cosa" + "Snippet pre-impostati") */}
             <aside className="lg:col-span-3 bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between space-y-5">
               <div className="space-y-5">
@@ -967,6 +1007,7 @@ export function App() {
               </div>
             </aside>
           </div>
+          )}
         </section>
 
         {/* Interactive Self-Teaching HTML Laboratory & Escaping Engine */}
@@ -975,8 +1016,9 @@ export function App() {
             model={model}
             onLoadPresetIntoStudio={(blocks) => {
               setModel(blocks);
+              setWorkspaceMode('block-model');
               setRightPaneTab('preview');
-              triggerToast('Esempio interattivo caricato nell’editor');
+              triggerToast('Esempio interattivo caricato nell’editor a blocchi');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
           />
