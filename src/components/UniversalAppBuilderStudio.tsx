@@ -1,515 +1,902 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
-  APP_MODULE_PACKAGES,
-  APP_BLUEPRINT_RECIPES,
-  MODULE_CATEGORIES,
-  ModuleCategory,
-  AppModulePackage,
-  buildAssembledAppHTML,
-} from '../utils/appModulesRegistry';
+  RegistryComponentDef,
+  AppForgeBlock,
+  AppForgeModel,
+  RegionName,
+  createBlockId,
+  getDefaultPropsForComponent,
+  renderComponentTemplate,
+  buildAppForgeExportHTML,
+} from '../utils/appForgeRegistry';
+import { QuickHtmlInventoryItem } from '../utils/quickHtmlInventoryDb';
 import {
   Package,
   Layers,
-  Code2,
-  Eye,
+  Play,
+  Code,
   Download,
   Copy,
-  Check,
-  Sparkles,
-  FileCode2,
-  Play,
+  Plus,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
   Sliders,
-  Cpu,
-  FolderOpen,
+  Search,
+  X,
+  CornerDownRight,
+  Database,
+  Eye,
+  RotateCcw,
 } from 'lucide-react';
 
 interface UniversalAppBuilderStudioProps {
+  model: AppForgeModel;
+  setModel: React.Dispatch<React.SetStateAction<AppForgeModel>>;
+  registry: Record<string, RegistryComponentDef>;
+  inventoryItems: QuickHtmlInventoryItem[];
   onNotify: (msg: string) => void;
-  onSendToSplitCleaner?: (htmlSource: string) => void;
+  onSendToSplitCleaner?: (html: string) => void;
+  onGoToSection?: (sec: 'editor' | 'inventario' | 'lezioni' | 'anteprima' | 'esporta') => void;
 }
 
 export const UniversalAppBuilderStudio: React.FC<UniversalAppBuilderStudioProps> = ({
+  model,
+  setModel,
+  registry,
+  inventoryItems,
   onNotify,
   onSendToSplitCleaner,
+  onGoToSection,
 }) => {
-  const [selectedIds, setSelectedIds] = useState<string[]>([
-    'pkg_shell_theme',
-    'pkg_ribbon_Dispatcher',
-    'pkg_word_page_canvas',
-    'pkg_spreadsheet_formula_engine',
-    'pkg_persistence_codec',
-    'pkg_status_modal_toast',
-  ]);
-  const [activeCategory, setActiveCategory] = useState<ModuleCategory | 'all'>('all');
-  const [accentColor, setAccentColor] = useState<string>('#2b579a');
-  const [appTitle, setAppTitle] = useState<string>('Office_Studio_Custom');
-  const [inspectingModule, setInspectingModule] = useState<AppModulePackage | null>(
-    APP_MODULE_PACKAGES[1]
-  );
-  const [rightTab, setRightTab] = useState<'live-app' | 'compiled-source' | 'office-full'>(
-    'live-app'
-  );
-  const [compiledHtml, setCompiledHtml] = useState<string>('');
-  const [officeOriginalHtml, setOfficeOriginalHtml] = useState<string>('');
-  const [loadingOfficeRef, setLoadingOfficeRef] = useState<boolean>(false);
+  // Active target region when clicking an object/function in the Palette
+  const [targetRegion, setTargetRegion] = useState<RegionName>('main');
+  // Optional target container block ID (if user wants to insert inside a `grid`, `card`, `flexRowContainer`, `collapsiblePanel`, etc.)
+  const [targetContainerId, setTargetContainerId] = useState<string | null>(null);
 
-  // Recompile single-file HTML app whenever modules, accent, or title change
-  useEffect(() => {
-    const out = buildAssembledAppHTML(selectedIds, accentColor, appTitle);
-    setCompiledHtml(out);
-  }, [selectedIds, accentColor, appTitle]);
+  // Selected block ID for the right-hand Property Inspector (#params)
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(() => {
+    const firstMain = model.regions.main?.[0];
+    return firstMain ? firstMain.id : null;
+  });
 
-  // Load the attached Office Studio single-file reference when requested
-  const loadAttachedOfficeStudio = async () => {
-    if (officeOriginalHtml) {
-      setRightTab('office-full');
-      return;
-    }
-    setLoadingOfficeRef(true);
-    try {
-      const res = await fetch(
-        '/assets/aistudio/Paste_November_11__2026_-_3_58PM_2d8eb1a7'
-      );
-      if (res.ok) {
-        const text = await res.text();
-        setOfficeOriginalHtml(text);
-        setRightTab('office-full');
-        onNotify('Sorgente completo "Office Studio — Word & Excel" caricato nel Sandbox');
-      } else {
-        onNotify('Impossibile leggere il file allegato');
+  // Palette search query & category filter
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [paletteCategoryFilter, setPaletteCategoryFilter] = useState<string>('Tutte');
+
+  // Center viewport tab: 'canvas' (3 regions visual builder) | 'preview' (inline sandbox) | 'code' (compiled HTML)
+  const [centerTab, setCenterTab] = useState<'canvas' | 'preview' | 'code'>('canvas');
+
+  // Inspector sub-tab: 'props' (block properties) | 'dna' (component HTML/CSS/JS template) | 'global' (app customCSS / customJS)
+  const [inspectorTab, setInspectorTab] = useState<'props' | 'dna' | 'global'>('props');
+
+  // Compiled standalone HTML
+  const compiledHTML = useMemo(() => {
+    return buildAppForgeExportHTML(model, registry);
+  }, [model, registry]);
+
+  // Recursive helper to find a block by ID across all regions and nested containers
+  const findBlockAnywhere = (id: string | null): { block: AppForgeBlock; region: RegionName } | null => {
+    if (!id) return null;
+    const searchInList = (
+      list: AppForgeBlock[],
+      regName: RegionName
+    ): { block: AppForgeBlock; region: RegionName } | null => {
+      for (const b of list) {
+        if (b.id === id) return { block: b, region: regName };
+        if (b.children && b.children.length > 0) {
+          const found = searchInList(b.children, regName);
+          if (found) return found;
+        }
       }
-    } catch {
-      onNotify('Errore nel caricamento del riferimento Office Studio');
-    } finally {
-      setLoadingOfficeRef(false);
+      return null;
+    };
+    for (const r of ['header', 'main', 'footer'] as RegionName[]) {
+      const res = searchInList(model.regions[r] || [], r);
+      if (res) return res;
+    }
+    return null;
+  };
+
+  const selectedBlockInfo = useMemo(() => findBlockAnywhere(selectedBlockId), [model, selectedBlockId]);
+  const selectedBlock = selectedBlockInfo?.block || null;
+  const selectedRegDef = selectedBlock ? registry[selectedBlock.component] : null;
+
+  // Recursive helper to update a block by ID
+  const updateBlockInTree = (
+    list: AppForgeBlock[],
+    id: string,
+    updater: (b: AppForgeBlock) => AppForgeBlock
+  ): AppForgeBlock[] => {
+    return list.map((b) => {
+      if (b.id === id) return updater(b);
+      if (b.children && b.children.length > 0) {
+        return { ...b, children: updateBlockInTree(b.children, id, updater) };
+      }
+      return b;
+    });
+  };
+
+  // Recursive helper to move/duplicate/delete a block in any list or nested container
+  const operateOnBlockTree = (
+    list: AppForgeBlock[],
+    id: string,
+    action: 'up' | 'down' | 'dup' | 'del'
+  ): AppForgeBlock[] => {
+    const idx = list.findIndex((b) => b.id === id);
+    if (idx !== -1) {
+      const next = [...list];
+      if (action === 'up' && idx > 0) {
+        [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+      } else if (action === 'down' && idx < next.length - 1) {
+        [next[idx + 1], next[idx]] = [next[idx], next[idx + 1]];
+      } else if (action === 'dup') {
+        const clone: AppForgeBlock = JSON.parse(JSON.stringify(next[idx]));
+        const assignNewIds = (blk: AppForgeBlock): AppForgeBlock => ({
+          ...blk,
+          id: createBlockId(),
+          children: blk.children ? blk.children.map(assignNewIds) : undefined,
+        });
+        next.splice(idx + 1, 0, assignNewIds(clone));
+      } else if (action === 'del') {
+        next.splice(idx, 1);
+      }
+      return next;
+    }
+    return list.map((b) => {
+      if (b.children && b.children.length > 0) {
+        return { ...b, children: operateOnBlockTree(b.children, id, action) };
+      }
+      return b;
+    });
+  };
+
+  const handleBlockAction = (id: string, action: 'up' | 'down' | 'dup' | 'del') => {
+    setModel((prev) => ({
+      ...prev,
+      regions: {
+        header: operateOnBlockTree(prev.regions.header, id, action),
+        main: operateOnBlockTree(prev.regions.main, id, action),
+        footer: operateOnBlockTree(prev.regions.footer, id, action),
+      },
+    }));
+    if (action === 'del' && selectedBlockId === id) {
+      setSelectedBlockId(null);
+    }
+    if (action === 'del' && targetContainerId === id) {
+      setTargetContainerId(null);
     }
   };
 
-  const toggleModule = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+  // Add an object or function from the Palette into either targetContainerId (if valid) or targetRegion
+  const handleAddComponent = (compId: string) => {
+    const reg = registry[compId];
+    if (!reg) return;
+    const newBlock: AppForgeBlock = {
+      id: createBlockId(),
+      component: compId,
+      props: getDefaultPropsForComponent(reg),
+      children: reg.container ? [] : undefined,
+    };
+
+    if (targetContainerId) {
+      const containerInfo = findBlockAnywhere(targetContainerId);
+      if (containerInfo && registry[containerInfo.block.component]?.container) {
+        setModel((prev) => ({
+          ...prev,
+          regions: {
+            header: updateBlockInTree(prev.regions.header, targetContainerId, (b) => ({
+              ...b,
+              children: [...(b.children || []), newBlock],
+            })),
+            main: updateBlockInTree(prev.regions.main, targetContainerId, (b) => ({
+              ...b,
+              children: [...(b.children || []), newBlock],
+            })),
+            footer: updateBlockInTree(prev.regions.footer, targetContainerId, (b) => ({
+              ...b,
+              children: [...(b.children || []), newBlock],
+            })),
+          },
+        }));
+        setSelectedBlockId(newBlock.id);
+        onNotify(`Aggiunto "${reg.label}" dentro il contenitore selezionato.`);
+        return;
+      }
+    }
+
+    setModel((prev) => ({
+      ...prev,
+      regions: {
+        ...prev.regions,
+        [targetRegion]: [...(prev.regions[targetRegion] || []), newBlock],
+      },
+    }));
+    setSelectedBlockId(newBlock.id);
+    onNotify(`Aggiunto "${reg.label}" nella regione ${targetRegion.toUpperCase()}.`);
+  };
+
+  // Update a property of the currently selected block
+  const handleUpdateBlockProp = (key: string, value: string | number) => {
+    if (!selectedBlockId) return;
+    setModel((prev) => ({
+      ...prev,
+      regions: {
+        header: updateBlockInTree(prev.regions.header, selectedBlockId, (b) => ({
+          ...b,
+          props: { ...b.props, [key]: value },
+        })),
+        main: updateBlockInTree(prev.regions.main, selectedBlockId, (b) => ({
+          ...b,
+          props: { ...b.props, [key]: value },
+        })),
+        footer: updateBlockInTree(prev.regions.footer, selectedBlockId, (b) => ({
+          ...b,
+          props: { ...b.props, [key]: value },
+        })),
+      },
+    }));
+  };
+
+  const handleClearCanvas = () => {
+    setModel({
+      name: model.name || 'Nuovo Progetto QuickHTML',
+      regions: { header: [], main: [], footer: [] },
+      customCSS: '',
+      customJS: '',
+    });
+    setSelectedBlockId(null);
+    setTargetContainerId(null);
+    onNotify('Tela svuotata. Clicca gli oggetti nella Palette o dall’Inventario per comporre.');
+  };
+
+  // Group all inventory items by inventoryCategory for the Palette
+  const groupedPalette = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const groups: Record<string, QuickHtmlInventoryItem[]> = {};
+    inventoryItems.forEach((comp) => {
+      if (paletteCategoryFilter !== 'Tutte' && comp.inventoryCategory !== paletteCategoryFilter) {
+        return;
+      }
+      if (
+        q &&
+        !comp.label.toLowerCase().includes(q) &&
+        !comp.inventoryCategory.toLowerCase().includes(q) &&
+        !comp.id.toLowerCase().includes(q) &&
+        !comp.tags.some((t) => t.toLowerCase().includes(q))
+      ) {
+        return;
+      }
+      if (!groups[comp.inventoryCategory]) groups[comp.inventoryCategory] = [];
+      groups[comp.inventoryCategory].push(comp);
+    });
+    return groups;
+  }, [inventoryItems, searchQuery, paletteCategoryFilter]);
+
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>();
+    inventoryItems.forEach((i) => set.add(i.inventoryCategory));
+    return ['Tutte', ...Array.from(set)];
+  }, [inventoryItems]);
+
+  // Render preview of a single block inside the Composer Canvas (supports nested children!)
+  const renderCanvasBlockCard = (block: AppForgeBlock, depth: number = 0) => {
+    const reg = registry[block.component];
+    if (!reg) return null;
+    const isSelected = selectedBlockId === block.id;
+    const isTargetContainer = targetContainerId === block.id;
+
+    const childrenPreviewHtml =
+      reg.container && block.children && block.children.length > 0
+        ? block.children
+            .map((ch) => {
+              const chReg = registry[ch.component];
+              return chReg ? renderComponentTemplate(chReg, ch.props) : '';
+            })
+            .join('')
+        : '<div style="padding:8px;border:1px dashed #cbd5e1;border-radius:6px;color:#64748b;font-size:12px">Contenitore vuoto (clicca "+ Inserisci qui dentro" e scegli un oggetto)</div>';
+
+    const previewHtml = renderComponentTemplate(reg, block.props, childrenPreviewHtml);
+
+    return (
+      <div
+        key={block.id}
+        onClick={(e) => {
+          e.stopPropagation();
+          setSelectedBlockId(block.id);
+        }}
+        className={`relative rounded-lg border transition-all p-3 bg-white cursor-pointer ${
+          depth > 0 ? 'ml-4 mt-2 border-l-4 border-l-indigo-500' : 'mb-2.5'
+        } ${
+          isSelected
+            ? 'border-blue-600 ring-2 ring-blue-500/15 shadow-xs'
+            : 'border-slate-200 hover:border-slate-300'
+        }`}
+      >
+        {/* Top bar of block card */}
+        <div className="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-slate-100">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-5 h-5 rounded bg-slate-100 text-slate-700 font-mono text-xs font-bold flex items-center justify-center shrink-0">
+              {reg.icon}
+            </span>
+            <span className="text-xs font-bold text-slate-800 truncate">{reg.label}</span>
+            <span className="text-[11px] font-mono text-slate-400">#{block.component}</span>
+            {reg.container && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTargetContainerId(isTargetContainer ? null : block.id);
+                }}
+                className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  isTargetContainer
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                }`}
+              >
+                {isTargetContainer ? '✓ Inserimento attivo qui dentro' : '+ Inserisci qui dentro'}
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => handleBlockAction(block.id, 'up')}
+              title="Sposta su"
+              className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded cursor-pointer"
+            >
+              <ArrowUp className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBlockAction(block.id, 'down')}
+              title="Sposta giù"
+              className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded cursor-pointer"
+            >
+              <ArrowDown className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBlockAction(block.id, 'dup')}
+              title="Duplica blocco"
+              className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded cursor-pointer"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBlockAction(block.id, 'del')}
+              title="Elimina blocco"
+              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Live structural preview of the block */}
+        <div
+          className="text-xs text-slate-700 bg-slate-50/70 rounded p-2.5 border border-slate-100 overflow-x-auto pointer-events-none"
+          dangerouslySetInnerHTML={{ __html: previewHtml }}
+        />
+
+        {/* If container has nested children, render their interactive cards */}
+        {reg.container && block.children && block.children.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-dashed border-slate-200 space-y-2">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-600">
+              <CornerDownRight className="w-3.5 h-3.5" />
+              <span>Figli annidati dentro {reg.label} ({block.children.length}):</span>
+            </div>
+            {block.children.map((child) => renderCanvasBlockCard(child, depth + 1))}
+          </div>
+        )}
+      </div>
     );
   };
 
-  const applyBlueprintRecipe = (recipeId: string) => {
-    const recipe = APP_BLUEPRINT_RECIPES.find((r) => r.id === recipeId);
-    if (!recipe) return;
-    setSelectedIds(recipe.moduleIds);
-    setAccentColor(recipe.accentColor);
-    setAppTitle(recipe.appTitle);
-    setRightTab('live-app');
-    onNotify(`Ricetta "${recipe.name}" assemblata e compilata in HTML`);
-  };
-
-  const handleDownloadAssembledApp = () => {
-    const codeToSave =
-      rightTab === 'office-full' && officeOriginalHtml
-        ? officeOriginalHtml
-        : compiledHtml;
-    const blob = new Blob([codeToSave], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${appTitle.toLowerCase().replace(/\s+/g, '-')}.html`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    onNotify(`Applicazione standalone "${a.download}" scaricata`);
-  };
-
-  const filteredModules = APP_MODULE_PACKAGES.filter(
-    (m) => activeCategory === 'all' || m.category === activeCategory
-  );
-
   return (
-    <div className="space-y-6">
-      {/* Architectural Explanation Header: How to build ANY software from an archive of HTML/CSS/JS packages */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <span>Dal Documento al Software Completo</span>
-              <span aria-hidden="true">·</span>
-              <span>Scomposizione di &ldquo;Office Studio — Word &amp; Excel&rdquo; in Pacchetti Riutilizzabili</span>
-            </div>
-            <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-              Costruttore Universale di App: Archivio di Pacchetti, Funzioni e Motori
-            </h2>
-            <p className="text-xs text-slate-600 max-w-3xl leading-relaxed">
-              Come si passa da un semplice testo HTML a un programma completo come il tuo <strong>Office Studio (Word &amp; Excel)</strong> o a qualunque altro software? Ogni funzionalità (la barra multifunzione, il foglio A4, il valutatore di formule <code className="font-mono">=SOMMA()</code>, la bacheca Kanban, il salvataggio IndexedDB/ZIP) è una <strong>tripla autonoma</strong>: <code className="font-mono">{`{ Stile CSS, Struttura HTML, Funzione JS }`}</code> collegata da un <em>Command Dispatcher</em> (<code className="font-mono">data-cmd</code>).
-            </p>
-          </div>
+    <div className="space-y-4">
+      {/* QuickHTML Editor Toolbar (Clean, focused on project assembly and navigation to Inventory / Preview / Export) */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <label className="text-xs font-bold text-slate-600">Progetto:</label>
+          <input
+            type="text"
+            value={model.name}
+            onChange={(e) => setModel((prev) => ({ ...prev, name: e.target.value }))}
+            placeholder="Nome del progetto..."
+            className="px-3 py-1.5 text-xs font-semibold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-600 w-52 sm:w-64"
+          />
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {onGoToSection && (
             <button
               type="button"
-              onClick={loadAttachedOfficeStudio}
-              disabled={loadingOfficeRef}
-              className="px-3.5 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              onClick={() => onGoToSection('inventario')}
+              className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
             >
-              <FolderOpen className="w-3.5 h-3.5" />
-              <span>
-                {loadingOfficeRef
-                  ? 'Caricamento...'
-                  : 'Esegui "Office Studio (Word & Excel)" Allegato'}
-              </span>
+              <Database className="w-3.5 h-3.5" />
+              <span>Apri Catalogo Inventario ({inventoryItems.length} Oggetti &amp; Funzioni)</span>
             </button>
-            <button
-              type="button"
-              onClick={handleDownloadAssembledApp}
-              className="px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Scarica App (.HTML Unico)</span>
-            </button>
-          </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleClearCanvas}
+            className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Svuota Tela</span>
+          </button>
         </div>
 
-        {/* Preset Software Blueprints ("Ricette pronte") */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {APP_BLUEPRINT_RECIPES.map((recipe) => (
-            <div
-              key={recipe.id}
-              className="border border-slate-200 rounded-lg p-3.5 bg-slate-50/70 hover:bg-white hover:border-blue-300 transition-colors flex flex-col justify-between gap-3"
+        <div className="flex flex-wrap items-center gap-2">
+          {onSendToSplitCleaner && (
+            <button
+              type="button"
+              onClick={() => {
+                onSendToSplitCleaner(compiledHTML);
+                onNotify('Codice inviato all’Editor WYSIWYG ↔ Sorgente & Cleaner.');
+              }}
+              className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
             >
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-xs font-bold text-slate-900">{recipe.name}</span>
-                  <span className="text-[11px] font-mono text-slate-500 tabular-nums">
-                    {recipe.moduleIds.length} pacchetti
-                  </span>
-                </div>
-                <p className="text-[11px] font-medium text-blue-700 mb-1">
-                  {recipe.subtitle}
-                </p>
-                <p className="text-xs text-slate-600 leading-normal">
-                  {recipe.description}
-                </p>
-              </div>
+              <Code className="w-3.5 h-3.5 text-blue-600" />
+              <span>Modifica in WYSIWYG ↔ Sorgente</span>
+            </button>
+          )}
+
+          {onGoToSection && (
+            <>
               <button
                 type="button"
-                onClick={() => applyBlueprintRecipe(recipe.id)}
-                className="w-full py-1.5 px-3 text-xs font-semibold text-slate-800 bg-white hover:bg-blue-600 hover:text-white border border-slate-300 hover:border-blue-600 rounded-md transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                onClick={() => onGoToSection('anteprima')}
+                className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
               >
-                <Play className="w-3 h-3" />
-                <span>Assembla questa App</span>
+                <Eye className="w-3.5 h-3.5" />
+                <span>Sezione Anteprima</span>
               </button>
-            </div>
-          ))}
+              <button
+                type="button"
+                onClick={() => onGoToSection('esporta')}
+                className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Sezione Esporta</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Main 12-Col Builder Workspace: Left (Archive of Packages + Inspector) | Right (Live Running Software + Compiled HTML) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* LEFT 5 COLS: Archive of Code Packages & Triplet Inspector */}
-        <div className="lg:col-span-5 space-y-4">
-          {/* Global Customization Bar */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+      {/* Main 3-Column Workspace: #palette (Left) | #canvas (Center) | #params (Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* LEFT COLUMN: #palette (Accesso rapido a tutti gli oggetti dell'Inventario) */}
+        <aside className="lg:col-span-3 bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden flex flex-col max-h-[780px]">
+          <div className="p-3.5 bg-slate-50 border-b border-slate-200 space-y-2.5">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                <Sliders className="w-3.5 h-3.5 text-blue-600" />
-                <span>Personalizzazione Globale Shell (--accent &amp; Titolo)</span>
-              </h3>
-              <span className="text-[11px] font-mono text-slate-500 tabular-nums">
-                {selectedIds.length}/{APP_MODULE_PACKAGES.length} moduli attivi
-              </span>
+              <div className="flex items-center gap-2">
+                <Package className="w-4 h-4 text-blue-600" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                  1. Palette Rapida ({inventoryItems.length})
+                </h3>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Nome Applicazione
-                </label>
-                <input
-                  type="text"
-                  value={appTitle}
-                  onChange={(e) => setAppTitle(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-md font-medium"
-                />
+            {/* Target Destination Selector */}
+            <div className="bg-white p-2 rounded-lg border border-slate-200 space-y-1.5">
+              <div className="text-[11px] font-semibold text-slate-500">
+                Destinazione al click:
               </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Colore Tema CSS (<code className="font-mono">--accent</code>)
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={accentColor}
-                    onChange={(e) => setAccentColor(e.target.value)}
-                    className="h-7 w-10 border border-slate-300 rounded cursor-pointer"
-                  />
+              {targetContainerId ? (
+                <div className="flex items-center justify-between gap-2 bg-indigo-50 text-indigo-800 px-2.5 py-1.5 rounded text-xs font-semibold">
+                  <span className="truncate">Dentro Contenitore #{targetContainerId.slice(0, 6)}</span>
                   <button
                     type="button"
-                    onClick={() => setAccentColor('#2b579a')}
-                    className="px-2 py-1 text-[11px] bg-slate-100 hover:bg-slate-200 rounded font-mono cursor-pointer"
+                    onClick={() => setTargetContainerId(null)}
+                    className="text-indigo-600 hover:text-indigo-900 cursor-pointer"
+                    title="Torna a inserire nelle Regioni"
                   >
-                    Word #2b579a
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAccentColor('#217346')}
-                    className="px-2 py-1 text-[11px] bg-slate-100 hover:bg-slate-200 rounded font-mono cursor-pointer"
-                  >
-                    Excel #217346
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
-              </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-1">
+                  {(['header', 'main', 'footer'] as RegionName[]).map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setTargetRegion(r)}
+                      className={`py-1 text-[11px] font-bold uppercase rounded transition-colors cursor-pointer ${
+                        targetRegion === r
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Category Dropdown */}
+            <select
+              value={paletteCategoryFilter}
+              onChange={(e) => setPaletteCategoryFilter(e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs font-semibold bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-blue-600"
+            >
+              {availableCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c === 'Tutte' ? `Tutte le Categorie (${inventoryItems.length})` : c}
+                </option>
+              ))}
+            </select>
+
+            {/* Search Filter */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cerca oggetto o funzione..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-blue-600"
+              />
             </div>
           </div>
 
-          {/* Package Archive List */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-              <div>
-                <h3 className="text-xs font-bold text-slate-900">
-                  Archivio Pacchetti &amp; Funzioni (Scegli cosa includere)
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Attiva o disattiva un pacchetto: il compilatore inietta istantaneamente il suo CSS, HTML e JS nell&apos;app a destra.
-                </p>
+          <div className="p-3 overflow-y-auto space-y-4 divide-y divide-slate-100">
+            {Object.entries(groupedPalette).map(([category, items]) => (
+              <div key={category} className="pt-3 first:pt-0">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2 px-1">
+                  {category} ({items.length})
+                </div>
+                <div className="space-y-1.5">
+                  {items.map((comp) => (
+                    <button
+                      key={comp.id}
+                      type="button"
+                      onClick={() => handleAddComponent(comp.id)}
+                      className="w-full text-left px-2.5 py-2 rounded-lg border border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 transition-all flex items-center justify-between gap-2 group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-6 h-6 rounded bg-slate-100 group-hover:bg-blue-100 text-slate-700 group-hover:text-blue-700 font-mono text-[11px] font-bold flex items-center justify-center shrink-0">
+                          {comp.icon}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-slate-800 truncate">
+                            {comp.label}
+                          </div>
+                          {comp.container && (
+                            <div className="text-[10px] text-indigo-600 font-medium">
+                              Contenitore annidabile
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <Plus className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            ))}
+          </div>
+        </aside>
 
-            {/* Category Filter Buttons */}
-            <div className="flex flex-wrap gap-1">
-              {MODULE_CATEGORIES.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => setActiveCategory(cat.id)}
-                  className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                    activeCategory === cat.id
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              ))}
+        {/* CENTER COLUMN: #canvas (Tela Regioni Header/Main/Footer) */}
+        <section className="lg:col-span-6 bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden flex flex-col min-h-[700px]">
+          <div className="px-4 py-2.5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1 bg-slate-800 p-1 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setCenterTab('canvas')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                  centerTab === 'canvas'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>
+                  2. Tela Compositore (
+                  {model.regions.header.length +
+                    model.regions.main.length +
+                    model.regions.footer.length}{' '}
+                  blocchi)
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCenterTab('preview')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                  centerTab === 'preview'
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>Test Rapido Sandbox</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCenterTab('code')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                  centerTab === 'code'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <Code className="w-3.5 h-3.5" />
+                <span>Sorgente HTML</span>
+              </button>
             </div>
+          </div>
 
-            {/* Module Cards */}
-            <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-              {filteredModules.map((mod) => {
-                const isEnabled = selectedIds.includes(mod.id);
-                const isInspected = inspectingModule?.id === mod.id;
+          {centerTab === 'canvas' && (
+            <div className="p-4 bg-slate-100/70 flex-1 overflow-y-auto space-y-4">
+              {(['header', 'main', 'footer'] as RegionName[]).map((regionName) => {
+                const blocks = model.regions[regionName] || [];
+                const isTarget = !targetContainerId && targetRegion === regionName;
                 return (
                   <div
-                    key={mod.id}
-                    className={`p-3 rounded-lg border transition-colors ${
-                      isEnabled
-                        ? 'bg-blue-50/40 border-blue-300'
-                        : 'bg-slate-50 border-slate-200 opacity-80'
+                    key={regionName}
+                    onClick={() => {
+                      setTargetContainerId(null);
+                      setTargetRegion(regionName);
+                    }}
+                    className={`rounded-xl border-2 border-dashed p-3.5 transition-colors ${
+                      isTarget
+                        ? 'border-blue-500 bg-blue-50/20'
+                        : 'border-slate-300 bg-white/60 hover:border-slate-400'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <label className="flex items-start gap-2.5 cursor-pointer select-none flex-1">
-                        <input
-                          type="checkbox"
-                          checked={isEnabled}
-                          onChange={() => toggleModule(mod.id)}
-                          className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <div>
-                          <div className="text-xs font-bold text-slate-900">
-                            {mod.title}
-                          </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                            {mod.summary}
-                          </div>
-                          <div className="text-[10px] font-mono text-blue-700 mt-1">
-                            {mod.originNote}
-                          </div>
-                        </div>
-                      </label>
-
+                    <div className="flex items-center justify-between mb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                          Regione: {regionName.toUpperCase()}
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-400">
+                          ({blocks.length} blocchi)
+                        </span>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setInspectingModule(mod)}
-                        className={`px-2 py-1 text-[11px] font-medium rounded border shrink-0 cursor-pointer ${
-                          isInspected
-                            ? 'bg-slate-900 text-white border-slate-900'
-                            : 'bg-white text-slate-700 border-slate-300 hover:border-slate-500'
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTargetContainerId(null);
+                          setTargetRegion(regionName);
+                        }}
+                        className={`px-2 py-0.5 text-[11px] font-semibold rounded cursor-pointer ${
+                          isTarget
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
                         }`}
                       >
-                        Ispeziona Codice
+                        {isTarget ? 'Regione attiva per inserimento' : 'Seleziona destinazione'}
                       </button>
                     </div>
+
+                    {blocks.length === 0 ? (
+                      <div className="text-center py-4 text-xs text-slate-400">
+                        Nessun blocco in <strong>{regionName}</strong>. Clicca un oggetto nella Palette a sinistra o nella sezione Inventario per aggiungerlo qui.
+                      </div>
+                    ) : (
+                      <div>{blocks.map((b) => renderCanvasBlockCard(b, 0))}</div>
+                    )}
                   </div>
                 );
               })}
             </div>
-          </div>
+          )}
 
-          {/* Single Package Anatomy Inspector (CSS + HTML + JS Triplet) */}
-          {inspectingModule && (
-            <div className="bg-slate-900 text-slate-100 border border-slate-800 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <div>
-                  <span className="text-[10px] font-mono text-sky-400">
-                    Anatomia del singolo Pacchetto ({inspectingModule.categoryLabel})
-                  </span>
-                  <h4 className="text-xs font-bold text-white">
-                    {inspectingModule.title}
-                  </h4>
-                </div>
-                {onSendToSplitCleaner && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSendToSplitCleaner(inspectingModule.html);
-                      onNotify(
-                        `Markup HTML di "${inspectingModule.title}" inviato all'Editor Split View`
-                      );
-                    }}
-                    className="px-2.5 py-1 text-[11px] font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded cursor-pointer whitespace-nowrap shrink-0"
-                  >
-                    Modifica HTML nello Split View
-                  </button>
-                )}
-              </div>
-
-              <div className="space-y-2 text-[11px] font-mono">
-                <div>
-                  <div className="text-amber-400 mb-1">1. Struttura HTML del modulo:</div>
-                  <pre className="p-2.5 bg-slate-950 rounded border border-slate-800 overflow-x-auto max-h-28 text-slate-200">
-                    <code>{inspectingModule.html}</code>
-                  </pre>
-                </div>
-                <div>
-                  <div className="text-emerald-400 mb-1">
-                    2. Logica &amp; Funzioni JS del modulo:
-                  </div>
-                  <pre className="p-2.5 bg-slate-950 rounded border border-slate-800 overflow-x-auto max-h-36 text-slate-200">
-                    <code>{inspectingModule.js}</code>
-                  </pre>
-                </div>
-              </div>
+          {centerTab === 'preview' && (
+            <div className="flex-1 bg-slate-200 p-3 flex flex-col">
+              <iframe
+                title="QuickHTML Inline Sandbox"
+                srcDoc={compiledHTML}
+                sandbox="allow-scripts allow-modals"
+                className="w-full flex-1 min-h-[620px] bg-white rounded-lg border border-slate-300 shadow-inner"
+              />
             </div>
           )}
-        </div>
 
-        {/* RIGHT 7 COLS: Live Running Assembled Application + Full Single-File Code */}
-        <div className="lg:col-span-7 flex flex-col space-y-3">
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col shadow-2xs">
-            {/* Top Bar of the Preview / Compiler Output */}
-            <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1 bg-slate-200/80 p-0.5 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setRightTab('live-app')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-                    rightTab === 'live-app'
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Eye className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>App Assemblata Live</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRightTab('compiled-source')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-                    rightTab === 'compiled-source'
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <FileCode2 className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Sorgente Unico Compilato ({compiledHtml.length} car.)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={loadAttachedOfficeStudio}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-                    rightTab === 'office-full'
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Cpu className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Office Studio (Word &amp; Excel) Allegato</span>
-                </button>
-              </div>
-
-              {onSendToSplitCleaner && rightTab === 'compiled-source' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSendToSplitCleaner(compiledHtml);
-                    onNotify('Applicazione inviata allo Split View per editing fine');
-                  }}
-                  className="px-3 py-1 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md cursor-pointer whitespace-nowrap shrink-0"
-                >
-                  Apri nello Split Editor
-                </button>
-              )}
+          {centerTab === 'code' && (
+            <div className="flex-1 bg-slate-950 text-slate-100 p-4 font-mono text-xs overflow-auto max-h-[680px]">
+              <pre className="leading-relaxed whitespace-pre-wrap break-words">{compiledHTML}</pre>
             </div>
+          )}
+        </section>
 
-            {/* Viewport Content */}
-            {rightTab === 'live-app' && (
-              <div className="flex flex-col flex-1">
-                <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-100 text-xs text-emerald-900 flex items-center justify-between">
-                  <span>
-                    <strong>Software in esecuzione nel Sandbox:</strong> prova i tasti della Ribbon, scrivi nel foglio A4, calcola <code className="font-mono">=SOMMA(B1:B3)</code> o sposta le card Kanban!
-                  </span>
-                  <span className="font-mono text-[11px] text-emerald-700">1 file HTML</span>
-                </div>
-                <iframe
-                  title="Applicazione Assemblata Live"
-                  sandbox="allow-scripts allow-modals allow-forms allow-downloads"
-                  srcDoc={compiledHtml}
-                  className="w-full h-[660px] border-0 bg-slate-100"
-                />
+        {/* RIGHT COLUMN: #params (Pannello Proprietà & DNA Oggetto) */}
+        <aside className="lg:col-span-3 bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden flex flex-col max-h-[780px]">
+          <div className="p-3 bg-slate-50 border-b border-slate-200">
+            <div className="flex items-center gap-1 bg-slate-200/80 p-1 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setInspectorTab('props')}
+                className={`flex-1 py-1 text-[11px] font-bold rounded-md transition-colors cursor-pointer ${
+                  inspectorTab === 'props'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                3. Proprietà
+              </button>
+              <button
+                type="button"
+                onClick={() => setInspectorTab('dna')}
+                className={`flex-1 py-1 text-[11px] font-bold rounded-md transition-colors cursor-pointer ${
+                  inspectorTab === 'dna'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Codice Oggetto
+              </button>
+              <button
+                type="button"
+                onClick={() => setInspectorTab('global')}
+                className={`flex-1 py-1 text-[11px] font-bold rounded-md transition-colors cursor-pointer ${
+                  inspectorTab === 'global'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                CSS/JS Globali
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 overflow-y-auto space-y-4 flex-1">
+            {inspectorTab === 'props' && (
+              <>
+                {!selectedBlock || !selectedRegDef ? (
+                  <div className="text-center py-8 text-xs text-slate-400 space-y-2">
+                    <Sliders className="w-6 h-6 text-slate-300 mx-auto" />
+                    <p>Seleziona un blocco nella Tela centrale per configurarne i parametri.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="pb-3 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded bg-blue-50 text-blue-700 font-mono text-xs font-bold flex items-center justify-center">
+                          {selectedRegDef.icon}
+                        </span>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900">{selectedRegDef.label}</h4>
+                          <p className="text-[11px] font-mono text-slate-400">
+                            id: &quot;{selectedRegDef.id}&quot; · regione: {selectedBlockInfo?.region}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {(selectedRegDef.config || []).length === 0 ? (
+                      <p className="text-xs text-slate-500">
+                        Questo oggetto/funzione è già autoconfigurato e pronto all&apos;uso.
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {selectedRegDef.config.map((cfg) => {
+                          const currentVal = selectedBlock.props[cfg.key] ?? cfg.default;
+                          return (
+                            <div key={cfg.key} className="space-y-1">
+                              <label className="block text-[11px] font-bold text-slate-700">
+                                {cfg.label}
+                              </label>
+                              {cfg.type === 'textarea' ? (
+                                <textarea
+                                  rows={3}
+                                  value={String(currentVal)}
+                                  onChange={(e) => handleUpdateBlockProp(cfg.key, e.target.value)}
+                                  className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-600"
+                                />
+                              ) : cfg.type === 'select' ? (
+                                <select
+                                  value={String(currentVal)}
+                                  onChange={(e) => handleUpdateBlockProp(cfg.key, e.target.value)}
+                                  className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-600"
+                                >
+                                  {(cfg.options || []).map((opt) => (
+                                    <option key={String(opt)} value={String(opt)}>
+                                      {String(opt)}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type={cfg.type === 'number' ? 'number' : 'text'}
+                                  value={String(currentVal)}
+                                  onChange={(e) =>
+                                    handleUpdateBlockProp(
+                                      cfg.key,
+                                      cfg.type === 'number' ? Number(e.target.value) : e.target.value
+                                    )
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-600"
+                                />
+                              )}
+                              {cfg.hint && (
+                                <p className="text-[10px] text-slate-400 leading-snug">{cfg.hint}</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {inspectorTab === 'dna' && (
+              <div className="space-y-3">
+                {!selectedRegDef ? (
+                  <p className="text-xs text-slate-400">
+                    Seleziona un blocco per ispezionare il suo codice HTML, CSS e JS.
+                  </p>
+                ) : (
+                  <>
+                    <div className="text-xs font-bold text-slate-800">
+                      Sorgente di <code>{selectedRegDef.id}</code>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-mono uppercase text-slate-400">HTML:</span>
+                      <pre className="p-2 bg-slate-900 text-emerald-300 rounded text-[11px] font-mono overflow-x-auto whitespace-pre-wrap">
+                        {selectedRegDef.html}
+                      </pre>
+                    </div>
+                    {selectedRegDef.css && (
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-mono uppercase text-slate-400">CSS:</span>
+                        <pre className="p-2 bg-slate-900 text-sky-300 rounded text-[11px] font-mono overflow-x-auto whitespace-pre-wrap">
+                          {selectedRegDef.css}
+                        </pre>
+                      </div>
+                    )}
+                    {selectedRegDef.js && (
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-mono uppercase text-slate-400">JavaScript:</span>
+                        <pre className="p-2 bg-slate-900 text-amber-300 rounded text-[11px] font-mono overflow-x-auto whitespace-pre-wrap">
+                          {selectedRegDef.js}
+                        </pre>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
 
-            {rightTab === 'compiled-source' && (
-              <div className="flex flex-col flex-1 bg-slate-950 text-slate-100">
-                <div className="px-4 py-2 bg-slate-900 border-b border-slate-800 text-xs text-slate-400 flex items-center justify-between">
-                  <span>
-                    Codice HTML+CSS+JS auto-contenuto generato combinando i{' '}
-                    <strong>{selectedIds.length} pacchetti</strong> selezionati
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard?.writeText(compiledHtml);
-                      onNotify('Codice completo dell’app copiato negli appunti');
-                    }}
-                    className="text-xs text-sky-400 hover:text-sky-300 font-semibold cursor-pointer"
-                  >
-                    Copia Tutto il File .HTML
-                  </button>
+            {inspectorTab === 'global' && (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700">
+                    Custom CSS Globale
+                  </label>
+                  <textarea
+                    rows={5}
+                    value={model.customCSS}
+                    onChange={(e) => setModel((prev) => ({ ...prev, customCSS: e.target.value }))}
+                    placeholder="/* Stili extra per il progetto */"
+                    className="w-full p-2 text-xs font-mono bg-slate-900 text-sky-300 rounded-lg border border-slate-700"
+                  />
                 </div>
-                <pre className="p-4 text-xs font-mono text-emerald-300 overflow-auto h-[660px] leading-relaxed">
-                  <code>{compiledHtml}</code>
-                </pre>
-              </div>
-            )}
-
-            {rightTab === 'office-full' && (
-              <div className="flex flex-col flex-1">
-                <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100 text-xs text-indigo-950 flex items-center justify-between">
-                  <span>
-                    <strong>Esecuzione Diretta del tuo file allegato:</strong> Office Studio — Word &amp; Excel (con codec ZIP/DEFLATE, DOCX/XLSX e motore formule completo)
-                  </span>
-                  <span className="font-mono text-[11px] text-indigo-700 tabular-nums">
-                    {officeOriginalHtml.length} car.
-                  </span>
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700">
+                    Custom JS Globale
+                  </label>
+                  <textarea
+                    rows={5}
+                    value={model.customJS}
+                    onChange={(e) => setModel((prev) => ({ ...prev, customJS: e.target.value }))}
+                    placeholder="// Logica extra con accesso a window.afStore"
+                    className="w-full p-2 text-xs font-mono bg-slate-900 text-amber-300 rounded-lg border border-slate-700"
+                  />
                 </div>
-                <iframe
-                  title="Office Studio Word & Excel Reference"
-                  sandbox="allow-scripts allow-modals allow-forms allow-downloads"
-                  srcDoc={officeOriginalHtml}
-                  className="w-full h-[660px] border-0 bg-white"
-                />
               </div>
             )}
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   );

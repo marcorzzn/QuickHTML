@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   EditorBlock,
   TextBlock,
@@ -20,6 +20,22 @@ import {
 import { LessonsLaboratory } from './components/LessonsLaboratory';
 import { SplitHtmlCleanerStudio } from './components/SplitHtmlCleanerStudio';
 import { UniversalAppBuilderStudio } from './components/UniversalAppBuilderStudio';
+import { QuickHtmlInventorySection } from './components/QuickHtmlInventorySection';
+import { QuickHtmlPreviewSection } from './components/QuickHtmlPreviewSection';
+import { QuickHtmlExportSection } from './components/QuickHtmlExportSection';
+import {
+  AppForgeModel,
+  RegionName,
+  createBlockId,
+  getDefaultPropsForComponent,
+  buildAppForgeExportHTML,
+} from './utils/appForgeRegistry';
+import {
+  ALL_QUICKHTML_INVENTORY_ITEMS,
+  QuickHtmlInventoryItem,
+  buildQuickHtmlRegistryMap,
+  buildDefaultQuickHtmlModel,
+} from './utils/quickHtmlInventoryDb';
 import {
   ArrowUp,
   ArrowDown,
@@ -43,14 +59,74 @@ import {
   Columns,
   Blocks,
   Package,
+  Database,
+  BookOpen,
 } from 'lucide-react';
 import { INITIAL_MODEL } from './types/editor';
 
 const STORAGE_KEY = 'quine_html_studio_model_v1';
+const QUICKHTML_MODEL_KEY = 'quickhtml_project_model_v2';
+const QUICKHTML_CUSTOM_INV_KEY = 'quickhtml_custom_inventory_v2';
+
+export type QuickHtmlTopSection = 'editor' | 'inventario' | 'lezioni' | 'anteprima' | 'esporta';
 
 export function App() {
+  // 5 Top-Level Sections of QuickHTML: Editor | Inventario | Lezioni | Anteprima | Esporta
+  const [activeSection, setActiveSection] = useState<QuickHtmlTopSection>('editor');
+
+  // Sub-mode inside the "Editor" section: 'app-builder' (Regioni/Contenitori) | 'split-cleaner' (WYSIWYG ↔ Sorgente) | 'block-model'
   const [workspaceMode, setWorkspaceMode] = useState<'app-builder' | 'split-cleaner' | 'block-model'>('app-builder');
   const [externalHtmlForCleaner, setExternalHtmlForCleaner] = useState<string | null>(null);
+
+  // Custom user-created Inventory items
+  const [customInventoryItems, setCustomInventoryItems] = useState<QuickHtmlInventoryItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(QUICKHTML_CUSTOM_INV_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+
+  // Full combined Inventory items list
+  const allInventoryItems = useMemo(() => {
+    return [...customInventoryItems, ...ALL_QUICKHTML_INVENTORY_ITEMS];
+  }, [customInventoryItems]);
+
+  // Full Registry Map for the compiler
+  const quickHtmlRegistry = useMemo(() => {
+    const customMap: Record<string, QuickHtmlInventoryItem> = {};
+    customInventoryItems.forEach((it) => {
+      customMap[it.id] = it;
+    });
+    return buildQuickHtmlRegistryMap(customMap);
+  }, [customInventoryItems]);
+
+  // Active QuickHTML Project Model (Header / Main / Footer regions)
+  const [quickHtmlModel, setQuickHtmlModel] = useState<AppForgeModel>(() => {
+    try {
+      const saved = localStorage.getItem(QUICKHTML_MODEL_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.regions) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return buildDefaultQuickHtmlModel();
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(QUICKHTML_MODEL_KEY, JSON.stringify(quickHtmlModel));
+    } catch {
+      // ignore
+    }
+  }, [quickHtmlModel]);
 
   const [model, setModel] = useState<EditorBlock[]>(() => {
     try {
@@ -458,17 +534,58 @@ export function App() {
   };
 
   const handleDownloadHTML = () => {
-    const fullDoc = buildFullHTMLDocument(model);
-    const blob = new Blob([fullDoc], { type: 'text/html;charset=utf-8' });
+    const compiled = buildAppForgeExportHTML(quickHtmlModel, quickHtmlRegistry);
+    const blob = new Blob([compiled], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'pagina-generata.html';
+    a.download =
+      (quickHtmlModel.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'quickhtml-app') + '.html';
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    triggerToast('File pagina-generata.html scaricato');
+    triggerToast(`Esportato file ${a.download}`);
+  };
+
+  // Insert an object or function from the Inventory directly into the Editor
+  const handleInsertFromInventory = (
+    componentId: string,
+    region: RegionName,
+    openEditorAfter: boolean = false
+  ) => {
+    const reg = quickHtmlRegistry[componentId];
+    if (!reg) return;
+    const newBlock = {
+      id: createBlockId(),
+      component: componentId,
+      props: getDefaultPropsForComponent(reg),
+      children: reg.container ? [] : undefined,
+    };
+    setQuickHtmlModel((prev) => ({
+      ...prev,
+      regions: {
+        ...prev.regions,
+        [region]: [...(prev.regions[region] || []), newBlock],
+      },
+    }));
+    triggerToast(`"${reg.label}" aggiunto nella regione ${region.toUpperCase()} dell’Editor.`);
+    if (openEditorAfter) {
+      setActiveSection('editor');
+      setWorkspaceMode('app-builder');
+    }
+  };
+
+  const handleAddNewCustomInventoryItem = (newItem: QuickHtmlInventoryItem) => {
+    setCustomInventoryItems((prev) => {
+      const next = [newItem, ...prev.filter((x) => x.id !== newItem.id)];
+      try {
+        localStorage.setItem(QUICKHTML_CUSTOM_INV_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
   };
 
   const editingElementBlock = editingElementId
@@ -478,53 +595,59 @@ export function App() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       {/* Top Bar Contract: 3 zones separated by gap-8 */}
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-8 px-6 py-3.5 bg-white border-b border-slate-200">
-        {/* Zone 1: Single text element wordmark */}
-        <a
-          href="#studio-workspace"
-          className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
+      <header className="sticky top-0 z-30 flex items-center justify-between gap-6 px-6 py-3.5 bg-white border-b border-slate-200">
+        {/* Zone 1: Brand Wordmark */}
+        <button
+          type="button"
+          onClick={() => setActiveSection('editor')}
+          className="text-lg font-extrabold tracking-tight text-slate-900 whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-2"
         >
-          QuineHTML Studio
-        </a>
+          <span className="text-blue-600">&lt;/&gt;</span>
+          <span>QuickHTML</span>
+        </button>
 
-        {/* Zone 2: 4 concise single-line text navigation links */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
-          <a
-            href="#studio-workspace"
-            className="hover:text-slate-900 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
-          >
-            Editor HTML
-          </a>
-          <a
-            href="#laboratorio-auto-riferimento"
-            className="hover:text-slate-900 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
-          >
-            Escaping & Lezioni
-          </a>
-          <a
-            href="#architettura-livelli"
-            className="hover:text-slate-900 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
-          >
-            Modello & Mapping
-          </a>
-          <button
-            type="button"
-            onClick={() => setFullHtmlModalOpen(true)}
-            className="hover:text-slate-900 hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-          >
-            Sorgente Generato
-          </button>
+        {/* Zone 2: The 5 Core Sections requested by the user: Editor | Inventario | Lezioni | Anteprima | Esporta */}
+        <nav className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          {[
+            { id: 'editor', label: 'Editor', icon: Columns },
+            {
+              id: 'inventario',
+              label: `Inventario (${allInventoryItems.length})`,
+              icon: Database,
+            },
+            { id: 'lezioni', label: 'Lezioni', icon: BookOpen },
+            { id: 'anteprima', label: 'Anteprima', icon: Eye },
+            { id: 'esporta', label: 'Esporta', icon: Download },
+          ].map((sec) => {
+            const Icon = sec.icon;
+            const isActive = activeSection === sec.id;
+            return (
+              <button
+                key={sec.id}
+                type="button"
+                onClick={() => setActiveSection(sec.id as QuickHtmlTopSection)}
+                className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                  isActive
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{sec.label}</span>
+              </button>
+            );
+          })}
         </nav>
 
-        {/* Zone 3: 1 primary action */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Zone 3: Primary Action */}
+        <div className="hidden sm:flex items-center gap-3 shrink-0">
           <button
             type="button"
             onClick={handleDownloadHTML}
             className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Esporta File .HTML</span>
+            <span>Scarica .HTML</span>
           </button>
         </div>
       </header>
@@ -538,119 +661,124 @@ export function App() {
       )}
 
       {/* Main Content Container */}
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 pt-6 space-y-12">
-        {/* Intro Strip */}
-        <section id="studio-workspace" className="space-y-5">
-          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-slate-200 pb-4">
-            <div>
-              <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
-                <span>Costruzione Visuale, Parsing Bidirezionale &amp; Sanitizzazione</span>
-                <span aria-hidden="true">·</span>
-                <span>DOM (WYSIWYG) ↔ Parser ↔ Sorgente HTML ↔ Target Sandbox</span>
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-                Editor di HTML scritto in HTML
-              </h1>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Segmented Workspace Mode Switcher */}
-              <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-200/80 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceMode('app-builder')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-                    workspaceMode === 'app-builder'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Package className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Costruttore Universale di App (Archivio Pacchetti)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceMode('split-cleaner')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-                    workspaceMode === 'split-cleaner'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Columns className="w-3.5 h-3.5 text-red-600" />
-                  <span>Split View: WYSIWYG ↔ Sorgente &amp; Cleaner</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceMode('block-model')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-                    workspaceMode === 'block-model'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Blocks className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Architettura a Blocchi (Modello JSON)</span>
-                </button>
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 pt-6 pb-12 space-y-8">
+        {/* SECTION 1: EDITOR */}
+        {activeSection === 'editor' && (
+          <section id="studio-workspace" className="space-y-5">
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-slate-200 pb-4">
+              <div>
+                <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
+                  <span>QuickHTML Studio</span>
+                  <span aria-hidden="true">·</span>
+                  <span>Assemblatore Regioni/Contenitori, Editor WYSIWYG ↔ Sorgente &amp; Sanitizzatore</span>
+                </div>
+                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+                  Sezione Editor
+                </h1>
               </div>
 
-              {/* Workspace Persistence Actions (shown in Block Model mode) */}
-              {workspaceMode === 'block-model' && (
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Segmented Editor Mode Switcher */}
+                <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-200/80 rounded-lg">
                   <button
                     type="button"
-                    onClick={() => setFullHtmlModalOpen(true)}
-                    className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                    onClick={() => setWorkspaceMode('app-builder')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                      workspaceMode === 'app-builder'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
                   >
-                    <Code className="w-3.5 h-3.5 text-blue-600" />
-                    <span>&lt;/&gt; Vedi HTML</span>
+                    <Package className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Assemblatore Visuale (Regioni &amp; Oggetti)</span>
                   </button>
                   <button
                     type="button"
-                    onClick={handleSaveLocal}
-                    className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                    onClick={() => setWorkspaceMode('split-cleaner')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                      workspaceMode === 'split-cleaner'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
                   >
-                    <Save className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Salva</span>
+                    <Columns className="w-3.5 h-3.5 text-red-600" />
+                    <span>Split View: WYSIWYG ↔ Sorgente &amp; Cleaner</span>
                   </button>
                   <button
                     type="button"
-                    onClick={handleLoadLocal}
-                    className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                    onClick={() => setWorkspaceMode('block-model')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                      workspaceMode === 'block-model'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
                   >
-                    <FolderOpen className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Carica</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleResetDefault}
-                    className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Ripristina</span>
+                    <Blocks className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Editor a Blocchi DOM</span>
                   </button>
                 </div>
-              )}
-            </div>
-          </div>
 
-          {workspaceMode === 'app-builder' ? (
-            <UniversalAppBuilderStudio
-              onNotify={triggerToast}
-              onSendToSplitCleaner={(htmlStr) => {
-                setExternalHtmlForCleaner(htmlStr);
-                setWorkspaceMode('split-cleaner');
-              }}
-            />
-          ) : workspaceMode === 'split-cleaner' ? (
-            <SplitHtmlCleanerStudio
-              onNotify={triggerToast}
-              externalHtmlToLoad={externalHtmlForCleaner}
-              onClearExternalHtml={() => setExternalHtmlForCleaner(null)}
-            />
-          ) : (
-            /* 3-Column Studio Layout: Palette (Left) | Visual Block Editor (Center) | Live Target / Inspector (Right) */
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch min-h-[640px]">
+                {workspaceMode === 'block-model' && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFullHtmlModalOpen(true)}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <Code className="w-3.5 h-3.5 text-blue-600" />
+                      <span>&lt;/&gt; Vedi HTML</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveLocal}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <Save className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Salva</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleLoadLocal}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Carica</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetDefault}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Ripristina</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {workspaceMode === 'app-builder' ? (
+              <UniversalAppBuilderStudio
+                model={quickHtmlModel}
+                setModel={setQuickHtmlModel}
+                registry={quickHtmlRegistry}
+                inventoryItems={allInventoryItems}
+                onNotify={triggerToast}
+                onGoToSection={setActiveSection}
+                onSendToSplitCleaner={(htmlStr) => {
+                  setExternalHtmlForCleaner(htmlStr);
+                  setWorkspaceMode('split-cleaner');
+                }}
+              />
+            ) : workspaceMode === 'split-cleaner' ? (
+              <SplitHtmlCleanerStudio
+                onNotify={triggerToast}
+                externalHtmlToLoad={externalHtmlForCleaner}
+                onClearExternalHtml={() => setExternalHtmlForCleaner(null)}
+              />
+            ) : (
+              /* 3-Column Studio Layout: Palette (Left) | Visual Block Editor (Center) | Live Target / Inspector (Right) */
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch min-h-[640px]">
             {/* LEFT PANEL: Palette ("La UI che ti permette di fare una certa cosa" + "Snippet pre-impostati") */}
             <aside className="lg:col-span-3 bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between space-y-5">
               <div className="space-y-5">
@@ -1036,45 +1164,96 @@ export function App() {
           </div>
           )}
         </section>
+        )}
 
-        {/* Interactive Self-Teaching HTML Laboratory & Escaping Engine */}
-        <div id="laboratorio-auto-riferimento">
-          <LessonsLaboratory
-            model={model}
-            onLoadPresetIntoStudio={(blocks) => {
-              setModel(blocks);
-              setWorkspaceMode('block-model');
-              setRightPaneTab('preview');
-              triggerToast('Esempio interattivo caricato nell’editor a blocchi');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
+        {/* SECTION 2: INVENTARIO (Rich internal database of HTML objects, widgets & JS functions) */}
+        {activeSection === 'inventario' && (
+          <QuickHtmlInventorySection
+            items={allInventoryItems}
+            onInsertIntoEditor={handleInsertFromInventory}
+            onSendHtmlToSplitEditor={(rawHtml) => {
+              setExternalHtmlForCleaner(rawHtml);
+              setWorkspaceMode('split-cleaner');
+              setActiveSection('editor');
+              triggerToast('Markup inviato allo Split View: WYSIWYG ↔ Sorgente.');
             }}
+            onAddNewCustomItem={handleAddNewCustomInventoryItem}
+            onNotify={triggerToast}
           />
-        </div>
+        )}
+
+        {/* SECTION 3: LEZIONI (Interactive Self-Teaching HTML Laboratory & Escaping Engine) */}
+        {activeSection === 'lezioni' && (
+          <div id="laboratorio-auto-riferimento">
+            <LessonsLaboratory
+              model={model}
+              onLoadPresetIntoStudio={(blocks) => {
+                setModel(blocks);
+                setWorkspaceMode('block-model');
+                setActiveSection('editor');
+                setRightPaneTab('preview');
+                triggerToast('Esempio interattivo caricato nell’Editor a Blocchi');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            />
+          </div>
+        )}
+
+        {/* SECTION 4: ANTEPRIMA (Responsive Sandbox Simulator) */}
+        {activeSection === 'anteprima' && (
+          <QuickHtmlPreviewSection
+            model={quickHtmlModel}
+            registry={quickHtmlRegistry}
+            onGoToSection={setActiveSection}
+            onNotify={triggerToast}
+          />
+        )}
+
+        {/* SECTION 5: ESPORTA (Multi-Target Compiler & Exporter) */}
+        {activeSection === 'esporta' && (
+          <QuickHtmlExportSection
+            model={quickHtmlModel}
+            registry={quickHtmlRegistry}
+            onImportModel={(newMod) => {
+              setQuickHtmlModel(newMod);
+              setActiveSection('editor');
+            }}
+            onNotify={triggerToast}
+          />
+        )}
       </main>
 
       {/* Clean Footer */}
       <footer id="architettura-livelli" className="border-t border-slate-200 bg-white py-6 px-6 mt-auto">
         <div className="max-w-[1440px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-800">QuineHTML Studio</span>
+            <span className="font-bold text-slate-900">QuickHTML</span>
             <span aria-hidden="true">·</span>
-            <span>Modello (Dati) → Mapping (escapeHTML / renderBlockHTML) → Target (&lt;iframe sandbox&gt;)</span>
+            <span>Editor · Inventario ({allInventoryItems.length} Oggetti &amp; Funzioni) · Lezioni · Anteprima · Esporta</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <button
               type="button"
-              onClick={() => setFullHtmlModalOpen(true)}
+              onClick={() => setActiveSection('inventario')}
               className="hover:text-slate-900 underline underline-offset-4 cursor-pointer"
             >
-              Ispeziona HTML Generato
+              Esplora Inventario
             </button>
             <span aria-hidden="true">·</span>
             <button
               type="button"
-              onClick={handleDownloadHTML}
+              onClick={() => setActiveSection('anteprima')}
               className="hover:text-slate-900 underline underline-offset-4 cursor-pointer"
             >
-              Scarica .HTML
+              Anteprima Sandbox
+            </button>
+            <span aria-hidden="true">·</span>
+            <button
+              type="button"
+              onClick={() => setActiveSection('esporta')}
+              className="hover:text-slate-900 underline underline-offset-4 cursor-pointer"
+            >
+              Esporta Progetto
             </button>
           </div>
         </div>

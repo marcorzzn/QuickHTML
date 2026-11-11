@@ -1,0 +1,824 @@
+Domanda centrale. La risposta breve è: **un editor HTML diventa un costruttore di app quando smette di essere "un foglio bianco" e diventa un catalogo di componenti + un modello composto**. Non serve un LLM perché il "know how" non viene generato ogni volta: viene **cristallizzato** nel catalogo.
+
+Ti spiego il modello, poi ti do il codice funzionante.
+
+---
+
+## 1. Perché senza LLM funziona (e perché il tuo editor attuale non basta)
+
+Il tuo editor attuale ha **un solo blocco**: testo libero. Le tre app che hai allegato non sono "testo libero", sono **composizioni di parti**:
+
+| App che hai allegato | Di cosa è fatta davvero |
+|---|---|
+| **Forge (video editor)** | topbar + media bin + canvas preview + transport + params panel + timeline (ruler + tracce + clip + playhead) |
+| **Office Studio** | titlebar + tabs + ribbon + contenteditable + spreadsheet grid + formula bar + sheet tabs + status bar |
+| **2D23D** | file input + parametri slider + canvas Three.js + bottone + export |
+
+Ogni riga è **un componente**. Se questi componenti esistono in un catalogo, comporre l'app è assemblarli. Il "know how" è dentro il catalogo, non nel prompt.
+
+## 2. L'architettura: tre pezzi
+
+```
+REGISTRY (catalogo)  →  MODEL (app come dato)  →  BUILDER (UI)  →  EXPORT (HTML)
+```
+
+- **Registry**: dizionario `{ id → { label, categoria, html, css, js, config, deps } }`. Ogni voce è una mini-app autosufficiente.
+- **Model**: `{ name, regions: { header: [...], main: [...], footer: [...] }, state, customCSS, customJS }`. L'app è **dato**, non codice.
+- **Builder**: palette a sinistra, tela al centro, parametri a destra, anteprima in iframe sandbox.
+- **Export**: prende il model, concatena CSS+JS dei componenti usati, produce un singolo file HTML.
+
+Per aggiungere una capacità nuova **non scrivi codice**: aggiungi una voce al registry. Il catalogo cresce, l'app composta cresce.
+
+## 3. MVP funzionante — `AppForge`
+
+Copia in `appforge.html` e apri. Include 18 componenti, 4 template pre-caricati, export singolo HTML, anteprima sandbox.
+
+```html
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>AppForge — Costruttore di app HTML</title>
+<style>
+  :root { --accent:#0b5fff; --border:#e2e2e2; --muted:#666; --bg:#f4f4f6; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font:13px system-ui,sans-serif; color:#1a1a1a; background:var(--bg); height:100vh; overflow:hidden; }
+  button { font:inherit; cursor:pointer; }
+  input, select, textarea { font:inherit; }
+
+  #app { display:grid; grid-template-rows:48px 1fr; height:100vh; }
+  .topbar { display:flex; align-items:center; gap:6px; padding:0 12px;
+    background:#fff; border-bottom:1px solid var(--border); }
+  .topbar .logo { font-weight:700; color:var(--accent); margin-right:8px; }
+  .topbar input#app-name { border:1px solid var(--border); border-radius:6px;
+    padding:5px 10px; width:200px; }
+  .topbar button { padding:6px 12px; border:1px solid var(--border);
+    background:#fff; border-radius:6px; }
+  .topbar button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .topbar .grow { flex:1; }
+
+  .body { display:grid; grid-template-columns:220px 1fr 280px; height:100%; min-height:0; }
+  aside, main { background:#fff; overflow:auto; }
+  aside { border-right:1px solid var(--border); }
+  aside:last-child { border-right:none; border-left:1px solid var(--border); }
+
+  #palette { padding:10px; }
+  #palette input { width:100%; padding:6px 10px; border:1px solid var(--border);
+    border-radius:6px; margin-bottom:10px; }
+  .palette-cat h4 { font-size:10px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--muted); margin:12px 0 6px; }
+  .palette-btn { display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+    padding:6px 8px; border:1px solid transparent; background:#fff; border-radius:6px;
+    font-size:12px; margin-bottom:2px; }
+  .palette-btn:hover { border-color:var(--border); background:#f8f8f8; }
+  .palette-btn .pic { width:22px; text-align:center; }
+
+  #canvas { padding:16px; background:#e9e9ee; }
+  .region { min-height:80px; background:#fff; border:2px dashed #ccc;
+    border-radius:10px; padding:10px; margin-bottom:10px; position:relative; }
+  .region[data-region="header"] { background:#f8f9ff; }
+  .region[data-region="footer"] { background:#f9f8f5; }
+  .region-label { position:absolute; top:-9px; left:12px; font-size:10px;
+    background:var(--bg); padding:1px 6px; color:var(--muted); border-radius:3px; }
+  .block { position:relative; padding:4px; margin:4px 0; border:1px solid transparent;
+    border-radius:6px; }
+  .block:hover { border-color:#d0d0d0; }
+  .block.selected { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  .block-tools { position:absolute; top:-10px; right:6px; display:none; gap:2px;
+    background:#fff; border:1px solid var(--border); border-radius:5px; padding:1px; }
+  .block:hover .block-tools { display:flex; }
+  .block-tools button { padding:2px 6px; border:none; background:#fff;
+    border-radius:3px; font-size:11px; }
+  .block-tools button:hover { background:#eee; }
+
+  #params { padding:12px; }
+  #params h3 { font-size:11px; text-transform:uppercase; color:var(--muted);
+    letter-spacing:.06em; margin-bottom:10px; }
+  #params .hint { color:var(--muted); font-size:12px; }
+  #params h4 { margin:8px 0 6px; }
+  .field { display:flex; flex-direction:column; gap:4px; margin-bottom:10px; }
+  .field span { font-size:11px; color:var(--muted); }
+  .field input, .field select, .field textarea { width:100%; padding:5px 8px;
+    border:1px solid var(--border); border-radius:6px; }
+  .field textarea { min-height:60px; resize:vertical; font-family:inherit; }
+  .field small { font-size:10px; color:var(--muted); }
+  .btn-danger { width:100%; padding:7px; background:#fff; border:1px solid #f0c0c0;
+    color:#c33; border-radius:6px; margin-top:8px; }
+
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:100;
+    display:none; align-items:center; justify-content:center; }
+  .modal.open { display:flex; }
+  .modal-content { background:#fff; border-radius:12px; width:min(900px,90vw);
+    height:min(700px,85vh); display:flex; flex-direction:column; overflow:hidden; }
+  .modal-content header { display:flex; justify-content:space-between; align-items:center;
+    padding:10px 16px; border-bottom:1px solid var(--border); font-weight:600; }
+  .modal-content header button { border:none; background:none; font-size:18px; }
+  .modal-content iframe { flex:1; border:none; width:100%; }
+
+  #templates-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+    gap:12px; padding:20px; overflow:auto; }
+  .tpl-card { padding:20px; border:1px solid var(--border); background:#fff;
+    border-radius:8px; text-align:center; cursor:pointer; text-transform:capitalize; }
+  .tpl-card:hover { border-color:var(--accent); color:var(--accent); }
+
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:#222; color:#fff; padding:10px 18px; border-radius:8px; font-size:12px;
+    opacity:0; pointer-events:none; transition:all .25s; z-index:200; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <span class="logo">⚡ AppForge</span>
+    <input id="app-name" value="Nuova app">
+    <button id="btn-templates">Template</button>
+    <button id="btn-new">Nuovo</button>
+    <button id="btn-import">Importa</button>
+    <div class="grow"></div>
+    <button id="btn-save">Salva</button>
+    <button id="btn-preview">Anteprima</button>
+    <button id="btn-export" class="primary">Esporta HTML</button>
+  </header>
+
+  <div class="body">
+    <aside id="palette">
+      <input id="search" placeholder="Cerca componente…">
+      <div id="palette-list"></div>
+    </aside>
+
+    <main id="canvas">
+      <div class="region" data-region="header"><span class="region-label">Header</span></div>
+      <div class="region" data-region="main"><span class="region-label">Main</span></div>
+      <div class="region" data-region="footer"><span class="region-label">Footer</span></div>
+    </main>
+
+    <aside id="params">
+      <h3>Proprietà</h3>
+      <div id="params-body"></div>
+    </aside>
+  </div>
+</div>
+
+<div class="modal" id="preview-modal">
+  <div class="modal-content">
+    <header><span>Anteprima</span><button onclick="closePreview()">✕</button></header>
+    <iframe id="preview-frame" sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"></iframe>
+  </div>
+</div>
+
+<div class="modal" id="templates-modal">
+  <div class="modal-content">
+    <header><span>Template</span><button onclick="closeTemplates()">✕</button></header>
+    <div id="templates-grid"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   1. REGISTRY — il catalogo dei componenti.
+   Ogni voce = una mini-app autosufficiente.
+   Per aggiungere capacità: aggiungi una voce qui.
+   ============================================================ */
+const REGISTRY = {
+
+  /* ---- TESTO ---- */
+  heading: {
+    category:'Testo', label:'Titolo', icon:'H',
+    html:'<h{{level}} class="af-h">{{text}}</h{{level}}>',
+    css:'.af-h{font-family:inherit;margin:0 0 .5rem;color:#1a1a1a}',
+    config:[
+      { key:'text', type:'text', label:'Testo', default:'Titolo' },
+      { key:'level', type:'select', label:'Livello', options:[1,2,3,4,5,6], default:1 }
+    ]
+  },
+  paragraph: {
+    category:'Testo', label:'Paragrafo', icon:'¶',
+    html:'<p class="af-p">{{text}}</p>',
+    css:'.af-p{line-height:1.6;margin:0 0 .75rem;color:#333}',
+    config:[{ key:'text', type:'textarea', label:'Testo', default:'Scrivi qui…' }]
+  },
+
+  /* ---- CONTROLLI ---- */
+  button: {
+    category:'Controlli', label:'Bottone', icon:'🔘',
+    html:'<button class="af-btn" data-action="{{action}}">{{text}}</button>',
+    css:'.af-btn{padding:.5rem 1rem;border:1px solid #0b5fff;background:#0b5fff;color:#fff;border-radius:6px;font:inherit;font-size:.9rem;cursor:pointer}.af-btn:hover{filter:brightness(1.08)}',
+    js:'document.querySelectorAll(".af-btn").forEach(b=>b.addEventListener("click",()=>{try{eval(b.dataset.action)}catch(e){console.error(e)}}))',
+    config:[
+      { key:'text', type:'text', label:'Testo', default:'Clicca' },
+      { key:'action', type:'text', label:'Azione JS', default:"alert('Ciao!')",
+        hint:'Codice eseguito al click (nel sandbox dell\'anteprima)' }
+    ]
+  },
+  input: {
+    category:'Controlli', label:'Campo input', icon:'⌨',
+    html:'<label class="af-field"><span>{{label}}</span><input type="{{type}}" placeholder="{{placeholder}}" data-bind="{{bind}}"></label>',
+    css:'.af-field{display:flex;flex-direction:column;gap:.3rem;font-size:.85rem;margin:0 0 .75rem}.af-field input,.af-field textarea,.af-field select{padding:.45rem .7rem;border:1px solid #ccc;border-radius:6px;font:inherit}',
+    config:[
+      { key:'label', type:'text', label:'Etichetta', default:'Nome' },
+      { key:'type', type:'select', label:'Tipo',
+        options:['text','email','number','password','date'], default:'text' },
+      { key:'placeholder', type:'text', label:'Placeholder', default:'' },
+      { key:'bind', type:'text', label:'Chiave stato', default:'name' }
+    ]
+  },
+  textarea: {
+    category:'Controlli', label:'Area testo', icon:'▤',
+    html:'<label class="af-field"><span>{{label}}</span><textarea placeholder="{{placeholder}}" data-bind="{{bind}}" rows="4"></textarea></label>',
+    css:'',
+    config:[
+      { key:'label', type:'text', label:'Etichetta', default:'Messaggio' },
+      { key:'placeholder', type:'text', label:'Placeholder', default:'' },
+      { key:'bind', type:'text', label:'Chiave stato', default:'message' }
+    ]
+  },
+  select: {
+    category:'Controlli', label:'Tendina', icon:'▾',
+    html:'<label class="af-field"><span>{{label}}</span><select data-bind="{{bind}}">{{options}}</select></label>',
+    css:'.af-field select{background:#fff}',
+    config:[
+      { key:'label', type:'text', label:'Etichetta', default:'Scegli' },
+      { key:'options', type:'text', label:'Opzioni (virgola)', default:'Uno,Due,Tre' },
+      { key:'bind', type:'text', label:'Chiave stato', default:'choice' }
+    ]
+  },
+  slider: {
+    category:'Controlli', label:'Slider', icon:'━',
+    html:'<label class="af-field"><span>{{label}}</span><input type="range" min="{{min}}" max="{{max}}" step="{{step}}" value="{{value}}" data-bind="{{bind}}"></label>',
+    css:'.af-field input[type=range]{width:100%;accent-color:#0b5fff;padding:0}',
+    config:[
+      { key:'label', type:'text', label:'Etichetta', default:'Valore' },
+      { key:'min', type:'number', label:'Min', default:0 },
+      { key:'max', type:'number', label:'Max', default:100 },
+      { key:'step', type:'number', label:'Step', default:1 },
+      { key:'value', type:'number', label:'Valore iniziale', default:50 },
+      { key:'bind', type:'text', label:'Chiave stato', default:'slider' }
+    ]
+  },
+  color: {
+    category:'Controlli', label:'Selettore colore', icon:'🎨',
+    html:'<label class="af-field"><span>{{label}}</span><input type="color" value="{{value}}" data-bind="{{bind}}"></label>',
+    css:'.af-field input[type=color]{height:36px;width:60px;padding:2px;cursor:pointer}',
+    config:[
+      { key:'label', type:'text', label:'Etichetta', default:'Colore' },
+      { key:'value', type:'text', label:'Valore default', default:'#0b5fff' },
+      { key:'bind', type:'text', label:'Chiave stato', default:'color' }
+    ]
+  },
+
+  /* ---- MEDIA ---- */
+  image: {
+    category:'Media', label:'Immagine', icon:'🖼',
+    html:'<img class="af-img" src="{{src}}" alt="{{alt}}">',
+    css:'.af-img{max-width:100%;height:auto;border-radius:8px;display:block}',
+    config:[
+      { key:'src', type:'text', label:'URL', default:'https://picsum.photos/600/300' },
+      { key:'alt', type:'text', label:'Alt', default:'' }
+    ]
+  },
+  video: {
+    category:'Media', label:'Video', icon:'▶',
+    html:'<video class="af-vid" src="{{src}}" controls></video>',
+    css:'.af-vid{max-width:100%;border-radius:8px;display:block}',
+    config:[{ key:'src', type:'text', label:'URL', default:'' }]
+  },
+  timeline: {
+    category:'Media', label:'Timeline', icon:'⏱',
+    html:'<div class="af-timeline" style="height:{{height}}px"><div class="af-tl-tracks" data-tracks="{{tracks}}"></div><div class="af-tl-playhead"></div></div>',
+    css:'.af-timeline{position:relative;background:#1f1d1a;border-radius:8px;overflow:hidden}.af-tl-tracks{display:flex;flex-direction:column;padding-top:8px}.af-tl-track{height:40px;border-bottom:1px solid #2a2722;position:relative}.af-tl-clip{position:absolute;top:4px;height:32px;background:#3a3730;border:1px solid #555;border-radius:4px;display:flex;align-items:center;padding:0 8px;font-size:11px;color:#ddd}.af-tl-playhead{position:absolute;top:0;bottom:0;width:2px;background:#f7d774;left:20%}',
+    js:'document.querySelectorAll(".af-timeline").forEach(t=>{const tracks=(t.querySelector(".af-tl-tracks").dataset.tracks||"").split(";");const wrap=t.querySelector(".af-tl-tracks");wrap.innerHTML=tracks.map(tr=>{const clips=(tr||"").split(",").filter(Boolean);return `<div class="af-tl-track">${clips.map(c=>{const [label,start,dur]=c.split(":");return `<div class="af-tl-clip" style="left:${start}%;width:${dur}%">${label}</div>`}).join("")}</div>`}).join("")})',
+    config:[
+      { key:'height', type:'number', label:'Altezza (px)', default:200 },
+      { key:'tracks', type:'textarea', label:'Tracce',
+        default:'Video:0:40,Intro:45:20;Audio:0:60',
+        hint:'; separa tracce, , separa clip, formato nome:inizio:larghezza in %' }
+    ]
+  },
+
+  /* ---- LAYOUT ---- */
+  card: {
+    category:'Layout', label:'Card', icon:'▢',
+    html:'<div class="af-card"><h3>{{title}}</h3><p>{{body}}</p></div>',
+    css:'.af-card{background:#fff;border:1px solid #e2e2e2;border-radius:10px;padding:1rem;margin:0 0 .75rem}.af-card h3{margin:0 0 .3rem;font-size:1rem}.af-card p{margin:0;color:#666;font-size:.9rem}',
+    config:[
+      { key:'title', type:'text', label:'Titolo', default:'Card' },
+      { key:'body', type:'textarea', label:'Corpo', default:'Contenuto…' }
+    ]
+  },
+  divider: {
+    category:'Layout', label:'Separatore', icon:'—',
+    html:'<hr class="af-hr">',
+    css:'.af-hr{border:none;border-top:1px solid #e2e2e2;margin:1rem 0}',
+    config:[]
+  },
+  spacer: {
+    category:'Layout', label:'Spazio', icon:'⬍',
+    html:'<div style="height:{{h}}px"></div>',
+    css:'',
+    config:[{ key:'h', type:'number', label:'Altezza (px)', default:24 }]
+  },
+  tabs: {
+    category:'Layout', label:'Tab', icon:'🗂',
+    html:'<div class="af-tabs" data-tabs="{{tabs}}"></div>',
+    css:'.af-tabs{display:flex;gap:.25rem;border-bottom:1px solid #e2e2e2;margin:0 0 .75rem}.af-tabs button{padding:.5rem 1rem;border:none;background:transparent;cursor:pointer;border-bottom:2px solid transparent}.af-tabs button.active{border-bottom-color:#0b5fff;color:#0b5fff;font-weight:600}',
+    js:'document.querySelectorAll(".af-tabs").forEach(t=>{const tabs=(t.dataset.tabs||"").split(",");t.innerHTML=tabs.map((x,i)=>`<button class="${i===0?"active":""}">${x}</button>`).join("");t.addEventListener("click",e=>{if(!e.target.matches("button"))return;t.querySelectorAll("button").forEach(b=>b.classList.remove("active"));e.target.classList.add("active")})})',
+    config:[{ key:'tabs', type:'text', label:'Tab (virgola)', default:'Uno,Due,Tre' }]
+  },
+
+  /* ---- DATI ---- */
+  table: {
+    category:'Dati', label:'Tabella', icon:'▦',
+    html:'<div class="af-table-wrap"><table class="af-table" data-cols="{{cols}}" data-rows="{{rows}}"></table></div>',
+    css:'.af-table-wrap{overflow:auto;border:1px solid #e2e2e2;border-radius:8px;margin:0 0 .75rem}.af-table{border-collapse:collapse;width:100%;font-size:.85rem}.af-table th,.af-table td{border-bottom:1px solid #eee;padding:.5rem .75rem;text-align:left}.af-table th{background:#f8f8f8;font-weight:600}',
+    js:'document.querySelectorAll(".af-table").forEach(t=>{const cols=(t.dataset.cols||"").split(",");const rows=parseInt(t.dataset.rows||"5");let h="<thead><tr>"+cols.map(c=>`<th>${c.trim()}</th>`).join("")+"</tr></thead><tbody>";for(let i=0;i<rows;i++)h+="<tr>"+cols.map(()=>"<td>—</td>").join("")+"</tr>";t.innerHTML=h+"</tbody>"})',
+    config:[
+      { key:'cols', type:'text', label:'Colonne (virgola)', default:'Nome,Età,Città' },
+      { key:'rows', type:'number', label:'Righe', default:5 }
+    ]
+  },
+  chart: {
+    category:'Dati', label:'Grafico a barre', icon:'📊',
+    html:'<canvas class="af-chart" data-values="{{values}}" data-labels="{{labels}}" width="600" height="300"></canvas>',
+    css:'.af-chart{max-width:100%;background:#fff;border:1px solid #e2e2e2;border-radius:8px}',
+    js:'document.querySelectorAll(".af-chart").forEach(c=>{const vals=(c.dataset.values||"").split(",").map(Number);const labs=(c.dataset.labels||"").split(",");const ctx=c.getContext("2d");const W=c.width,H=c.height,pad=40,maxV=Math.max(1,...vals);const bw=(W-pad*2)/vals.length*.7;vals.forEach((v,i)=>{const x=pad+i*((W-pad*2)/vals.length);const bh=(H-pad*2)*(v/maxV);ctx.fillStyle="#0b5fff";ctx.fillRect(x,H-pad-bh,bw,bh);ctx.fillStyle="#333";ctx.font="11px system-ui";ctx.textAlign="center";ctx.fillText((labs[i]||"").trim(),x+bw/2,H-pad+14);ctx.fillText(v,x+bw/2,H-pad-bh-4)})})',
+    config:[
+      { key:'values', type:'text', label:'Valori (virgola)', default:'10,25,15,30,20' },
+      { key:'labels', type:'text', label:'Etichette (virgola)', default:'A,B,C,D,E' }
+    ]
+  },
+
+  /* ---- EDITOR ---- */
+  contenteditable: {
+    category:'Editor', label:'Area modificabile', icon:'✎',
+    html:'<div class="af-editable" contenteditable="true">{{content}}</div>',
+    css:'.af-editable{min-height:200px;padding:1rem;background:#fff;border:1px solid #e2e2e2;border-radius:8px;line-height:1.6;outline:none;font-family:Georgia,serif}',
+    config:[{ key:'content', type:'textarea', label:'Contenuto iniziale',
+              default:'<p>Scrivi qui…</p>', raw:true }]
+  },
+  codeEditor: {
+    category:'Editor', label:'Editor di codice', icon:'⌨',
+    html:'<textarea class="af-code" spellcheck="false">{{initial}}</textarea>',
+    css:'.af-code{width:100%;min-height:200px;padding:.75rem;font-family:ui-monospace,monospace;font-size:.85rem;border:1px solid #ccc;border-radius:8px;background:#1e1e1e;color:#ddd;resize:vertical;tab-size:2}',
+    config:[{ key:'initial', type:'textarea', label:'Contenuto iniziale',
+              default:'<!-- codice -->', raw:true }]
+  },
+
+  /* ---- 3D ---- */
+  threeCanvas: {
+    category:'3D', label:'Canvas 3D', icon:'◈',
+    html:'<div class="af-3d" style="width:100%;height:{{height}}px"></div>',
+    css:'.af-3d{background:#141418;border-radius:8px;overflow:hidden}',
+    js:`(async()=>{const els=document.querySelectorAll(".af-3d");if(!els.length)return;const THREE=await import("https://unpkg.com/three@0.169.0/build/three.module.js");els.forEach(el=>{const scene=new THREE.Scene();const cam=new THREE.PerspectiveCamera(50,el.clientWidth/el.clientHeight,.1,1000);cam.position.set(0,0,3);const r=new THREE.WebGLRenderer({antialias:true});r.setSize(el.clientWidth,el.clientHeight);r.setPixelRatio(Math.min(devicePixelRatio,2));el.appendChild(r.domElement);const cube=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial({color:0x0b5fff,metalness:.5,roughness:.3}));scene.add(cube);scene.add(new THREE.HemisphereLight(0xffffff,0x333333,1.5));let t=0;(function anim(){requestAnimationFrame(anim);t+=.01;cube.rotation.x=t;cube.rotation.y=t*1.3;r.render(scene,cam)})()})})()`,
+    config:[{ key:'height', type:'number', label:'Altezza (px)', default:300 }]
+  },
+
+  /* ---- AVANZATO ---- */
+  htmlEmbed: {
+    category:'Avanzato', label:'HTML raw', icon:'</>',
+    html:'<div class="af-html">{{code}}</div>',
+    css:'.af-html{padding:.5rem;border:1px dashed #ccc;border-radius:6px}',
+    config:[{ key:'code', type:'textarea', label:'HTML',
+              default:'<b>Snippet</b>', raw:true }]
+  }
+};
+
+/* ============================================================
+   2. MODEL
+   ============================================================ */
+const emptyModel = () => ({
+  name:'Nuova app',
+  regions:{ header:[], main:[], footer:[] },
+  customCSS:'',
+  customJS:''
+});
+
+let model = emptyModel();
+let selected = null;
+
+/* ============================================================
+   3. HELPERS
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const escapeHTML = s => String(s ?? '').replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function defaultProps(reg) {
+  const out = {};
+  (reg.config || []).forEach(c => out[c.key] = c.default);
+  return out;
+}
+
+function renderTemplate(tpl, props, reg) {
+  return tpl.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+    let v = props[key] ?? '';
+    if (key === 'options') {
+      return String(v).split(',').map(x => `<option>${escapeHTML(x.trim())}</option>`).join('');
+    }
+    const cfg = (reg.config || []).find(c => c.key === key);
+    if (cfg?.raw) return String(v);
+    return escapeHTML(String(v));
+  });
+}
+
+/* ============================================================
+   4. RENDERING
+   ============================================================ */
+function injectComponentStyles() {
+  let el = document.getElementById('component-styles');
+  if (!el) { el = document.createElement('style'); el.id = 'component-styles'; document.head.appendChild(el); }
+  el.textContent = Object.values(REGISTRY).map(r => r.css || '').join('\n');
+}
+
+function renderCanvas() {
+  $$('.region').forEach(regionEl => {
+    const region = regionEl.dataset.region;
+    regionEl.querySelectorAll('.block').forEach(b => b.remove());
+    const blocks = model.regions[region] || [];
+    blocks.forEach((block, i) => {
+      const reg = REGISTRY[block.component];
+      if (!reg) return;
+      const props = { ...defaultProps(reg), ...block.props };
+      const div = document.createElement('div');
+      div.className = 'block' + (selected?.region === region && selected?.index === i ? ' selected' : '');
+      div.innerHTML = renderTemplate(reg.html, props, reg);
+
+      const tools = document.createElement('div');
+      tools.className = 'block-tools';
+      tools.innerHTML = `<button data-act="up">↑</button><button data-act="down">↓</button><button data-act="dup">⎘</button><button data-act="del">✕</button>`;
+      tools.addEventListener('click', e => {
+        e.stopPropagation();
+        const act = e.target.dataset.act;
+        if (!act) return;
+        if (act === 'up' && i > 0) [blocks[i-1], blocks[i]] = [blocks[i], blocks[i-1]];
+        if (act === 'down' && i < blocks.length - 1) [blocks[i+1], blocks[i]] = [blocks[i], blocks[i+1]];
+        if (act === 'dup') blocks.splice(i+1, 0, JSON.parse(JSON.stringify(block)));
+        if (act === 'del') blocks.splice(i, 1);
+        selected = null;
+        renderCanvas(); renderParams();
+      });
+      div.appendChild(tools);
+
+      div.addEventListener('click', e => {
+        e.stopPropagation();
+        selected = { region, index:i };
+        renderCanvas(); renderParams();
+      });
+      regionEl.appendChild(div);
+    });
+  });
+}
+
+function renderPalette() {
+  const search = ($('#search').value || '').toLowerCase();
+  const cats = {};
+  Object.entries(REGISTRY).forEach(([id, reg]) => {
+    if (search && !reg.label.toLowerCase().includes(search) && !id.toLowerCase().includes(search)) return;
+    (cats[reg.category] ||= []).push({ id, ...reg });
+  });
+  $('#palette-list').innerHTML = Object.entries(cats).map(([cat, items]) => `
+    <div class="palette-cat">
+      <h4>${cat}</h4>
+      ${items.map(it => `<button class="palette-btn" data-id="${it.id}">
+        <span class="pic">${it.icon || '•'}</span><span>${it.label}</span>
+      </button>`).join('')}
+    </div>`).join('');
+  $$('.palette-btn').forEach(b => b.addEventListener('click', () => addComponent(b.dataset.id)));
+}
+
+function addComponent(id) {
+  const reg = REGISTRY[id];
+  if (!reg) return;
+  const target = selected?.region || 'main';
+  model.regions[target] ||= [];
+  model.regions[target].push({ component:id, props: defaultProps(reg) });
+  selected = { region:target, index: model.regions[target].length - 1 };
+  renderCanvas(); renderParams();
+}
+
+function renderParams() {
+  const body = $('#params-body');
+  if (!selected) {
+    body.innerHTML = '<p class="hint">Seleziona un componente sulla tela.</p>';
+    return;
+  }
+  const block = model.regions[selected.region]?.[selected.index];
+  if (!block) { selected = null; return renderParams(); }
+  const reg = REGISTRY[block.component];
+  const props = { ...defaultProps(reg), ...block.props };
+  let html = `<h4>${reg.label}</h4>`;
+  (reg.config || []).forEach(cfg => {
+    html += `<label class="field"><span>${cfg.label}</span>`;
+    if (cfg.type === 'textarea') {
+      html += `<textarea data-key="${cfg.key}">${escapeHTML(props[cfg.key] ?? '')}</textarea>`;
+    } else if (cfg.type === 'select') {
+      html += `<select data-key="${cfg.key}">${cfg.options.map(o =>
+        `<option value="${escapeHTML(o)}" ${o == props[cfg.key] ? 'selected' : ''}>${escapeHTML(o)}</option>`
+      ).join('')}</select>`;
+    } else if (cfg.type === 'number') {
+      html += `<input type="number" data-key="${cfg.key}" value="${escapeHTML(props[cfg.key] ?? '')}">`;
+    } else {
+      html += `<input type="text" data-key="${cfg.key}" value="${escapeHTML(props[cfg.key] ?? '')}">`;
+    }
+    if (cfg.hint) html += `<small>${cfg.hint}</small>`;
+    html += `</label>`;
+  });
+  html += `<button class="btn-danger" id="del-block">Elimina componente</button>`;
+  body.innerHTML = html;
+  body.querySelectorAll('[data-key]').forEach(el => {
+    el.addEventListener('input', () => {
+      block.props[el.dataset.key] = el.value;
+      renderCanvas();
+    });
+  });
+  $('#del-block').addEventListener('click', () => {
+    model.regions[selected.region].splice(selected.index, 1);
+    selected = null;
+    renderCanvas(); renderParams();
+  });
+}
+
+/* ============================================================
+   5. BUILD FINAL HTML
+   ============================================================ */
+function buildHTML() {
+  const used = new Set();
+  const sections = {};
+  for (const [region, blocks] of Object.entries(model.regions)) {
+    sections[region] = (blocks || []).map(b => {
+      used.add(b.component);
+      const reg = REGISTRY[b.component];
+      const props = { ...defaultProps(reg), ...b.props };
+      return `<div class="af-block">${renderTemplate(reg.html, props, reg)}</div>`;
+    }).join('\n');
+  }
+  const css = [...used].map(id => REGISTRY[id].css || '').join('\n');
+  const js  = [...used].map(id => REGISTRY[id].js  || '').join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHTML(model.name)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,sans-serif;background:#fafafa;color:#1a1a1a}
+  .af-app{display:flex;flex-direction:column;min-height:100vh}
+  .af-header{padding:1rem 1.5rem;background:#fff;border-bottom:1px solid #e2e2e2}
+  .af-main{padding:1.5rem;flex:1;max-width:1000px;margin:0 auto;width:100%}
+  .af-footer{padding:1rem 1.5rem;background:#f4f4f4;border-top:1px solid #e2e2e2;font-size:.85rem;color:#666}
+  .af-block{margin:0 0 1rem}
+  ${css}
+  ${model.customCSS || ''}
+</style>
+</head>
+<body>
+<div class="af-app">
+  ${sections.header ? `<header class="af-header">${sections.header}</header>` : ''}
+  <main class="af-main">${sections.main || ''}</main>
+  ${sections.footer ? `<footer class="af-footer">${sections.footer}</footer>` : ''}
+</div>
+<script type="module">
+${js}
+${model.customJS || ''}
+<\/script>
+</body>
+</html>`;
+}
+
+/* ============================================================
+   6. PREVIEW / EXPORT
+   ============================================================ */
+function openPreview() {
+  $('#preview-frame').srcdoc = buildHTML();
+  $('#preview-modal').classList.add('open');
+}
+function closePreview() { $('#preview-modal').classList.remove('open'); }
+
+function exportHTML() {
+  const blob = new Blob([buildHTML()], { type:'text/html' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (model.name || 'app') + '.html';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast('HTML esportato');
+}
+
+/* ============================================================
+   7. TEMPLATES
+   ============================================================ */
+const TEMPLATES = {
+  'vuoto': emptyModel,
+  'editor video': () => ({
+    name:'Editor video',
+    regions:{
+      header:[{ component:'heading', props:{ text:'🎬 Editor video', level:1 } }],
+      main:[
+        { component:'card', props:{ title:'Anteprima', body:'Qui va il player video.' } },
+        { component:'timeline', props:{ height:240, tracks:'Video:0:40,Intro:45:20;Audio:0:60' } },
+        { component:'card', props:{ title:'Proprietà clip', body:'Seleziona una clip per modificarla.' } }
+      ],
+      footer:[]
+    }, customCSS:'', customJS:''
+  }),
+  'office': () => ({
+    name:'Office',
+    regions:{
+      header:[
+        { component:'heading', props:{ text:'📝 Office Studio', level:1 } },
+        { component:'tabs', props:{ tabs:'Word,Excel,PowerPoint' } }
+      ],
+      main:[
+        { component:'contenteditable', props:{ content:'<p>Scrivi qui il documento…</p>' } },
+        { component:'spacer', props:{ h:16 } },
+        { component:'table', props:{ cols:'A,B,C,D', rows:8 } }
+      ],
+      footer:[]
+    }, customCSS:'', customJS:''
+  }),
+  'dashboard': () => ({
+    name:'Dashboard',
+    regions:{
+      header:[{ component:'heading', props:{ text:'📊 Dashboard', level:1 } }],
+      main:[
+        { component:'chart', props:{ values:'12,25,18,32,22,28', labels:'Gen,Feb,Mar,Apr,Mag,Giu' } },
+        { component:'table', props:{ cols:'Utente,Stato,Ultimo accesso', rows:6 } }
+      ],
+      footer:[]
+    }, customCSS:'', customJS:''
+  }),
+  '3d viewer': () => ({
+    name:'3D Viewer',
+    regions:{
+      header:[{ component:'heading', props:{ text:'◈ 3D Viewer', level:1 } }],
+      main:[
+        { component:'threeCanvas', props:{ height:400 } },
+        { component:'button', props:{ text:'Ricostruisci', action:"alert('Demo: qui si lancerebbe la pipeline 3D')" } }
+      ],
+      footer:[]
+    }, customCSS:'', customJS:''
+  })
+};
+
+function openTemplates() {
+  $('#templates-grid').innerHTML = Object.keys(TEMPLATES).map(id =>
+    `<button class="tpl-card" data-tpl="${id}">${id}</button>`).join('');
+  $$('.tpl-card').forEach(b => b.addEventListener('click', () => {
+    if (!confirm('Sovrascrivere l\'app corrente?')) return;
+    model = TEMPLATES[b.dataset.tpl]();
+    $('#app-name').value = model.name;
+    selected = null;
+    renderCanvas(); renderParams();
+    closeTemplates();
+  }));
+  $('#templates-modal').classList.add('open');
+}
+function closeTemplates() { $('#templates-modal').classList.remove('open'); }
+
+/* ============================================================
+   8. TOAST + PERSISTENCE
+   ============================================================ */
+let toastTimer;
+function toast(msg) {
+  let el = document.getElementById('toast');
+  if (!el) { el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; document.body.appendChild(el); }
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+const KEY = 'appforge-v1';
+function save() { localStorage.setItem(KEY, JSON.stringify(model)); toast('Salvato'); }
+function load() {
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return;
+  try { model = JSON.parse(raw); } catch(e) {}
+}
+
+/* ============================================================
+   9. INIT
+   ============================================================ */
+function init() {
+  load();
+  injectComponentStyles();
+  $('#app-name').value = model.name;
+  renderPalette();
+  renderCanvas();
+  renderParams();
+
+  $('#search').addEventListener('input', renderPalette);
+  $('#app-name').addEventListener('input', e => model.name = e.target.value);
+  $('#btn-save').addEventListener('click', save);
+  $('#btn-export').addEventListener('click', exportHTML);
+  $('#btn-preview').addEventListener('click', openPreview);
+  $('#btn-templates').addEventListener('click', openTemplates);
+  $('#btn-new').addEventListener('click', () => {
+    if (!confirm('Nuova app?')) return;
+    model = emptyModel(); selected = null;
+    $('#app-name').value = model.name;
+    renderCanvas(); renderParams();
+  });
+  $('#btn-import').addEventListener('click', () => {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.json';
+    inp.onchange = () => {
+      const f = inp.files[0]; if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        try {
+          model = JSON.parse(r.result);
+          $('#app-name').value = model.name;
+          renderCanvas(); renderParams(); renderPalette();
+        } catch(e) { toast('JSON non valido'); }
+      };
+      r.readAsText(f);
+    };
+    inp.click();
+  });
+}
+init();
+</script>
+</body>
+</html>
+```
+
+## 4. Cosa fa e come estenderlo
+
+**Com'è fatto internamente** (stesso schema dell'editor MVP precedente):
+- `REGISTRY` è il catalogo. Ogni voce ha `html`, `css`, `js`, `config`, ed è autosufficiente.
+- `model` è la tua app come **dato JSON**: `regions.header/main/footer` contengono array di `{component, props}`.
+- `renderCanvas` mostra i blocchi con il loro HTML reale (ma senza eseguire il JS: è solo anteprima visiva).
+- `buildHTML` concatena CSS+JS dei componenti usati e produce un HTML unico.
+- L'iframe `sandbox` esegue il JS. **Il tuo builder è al sicuro.**
+
+**Per aggiungere una capacità nuova, non scrivi codice: aggiungi una voce al registry.** Esempio, per aggiungere un "carosello":
+
+```js
+carousel: {
+  category:'Media', label:'Carosello', icon:'⧉',
+  html:'<div class="af-carousel" data-imgs="{{imgs}}"></div>',
+  css:'.af-carousel{display:flex;overflow-x:auto;gap:.5rem;padding:.5rem}.af-carousel img{height:120px;border-radius:8px}',
+  js:'document.querySelectorAll(".af-carousel").forEach(c=>{c.innerHTML=(c.dataset.imgs||"").split(",").map(u=>`<img src="${u.trim()}">`).join("")})',
+  config:[{ key:'imgs', type:'textarea', label:'URL immagini (virgola)', default:'https://picsum.photos/200' }]
+}
+```
+
+Dieci righe e il carosello esiste per sempre, in tutte le app che costruisci.
+
+## 5. Come mappare le tue tre app esempio
+
+Le tre app che hai allegato **non richiedono l'LLM**: richiedono che il loro "scheletro" sia nel registry.
+
+| Componente in Forge/Office/2D23D | Diventa una voce del registry |
+|---|---|
+| Topbar di Forge | `toolbar` con slot per bottoni |
+| Media bin | `mediaBin` (grid di asset) |
+| Canvas preview | `canvasPlayer` |
+| Transport (play/stop) | `transport` |
+| Params panel | `paramsPanel` (form generato) |
+| Timeline con track/clip | `timeline` (già presente, da espandere) |
+| Ribbon di Word | `ribbon` (tabs + gruppi) |
+| Contenteditable | `contenteditable` (già presente) |
+| Spreadsheet | `spreadsheet` (griglia + formula bar) |
+| Formula bar | `formulaBar` |
+| File input | `fileInput` |
+| Slider | `slider` (già presente) |
+| Canvas Three.js | `threeCanvas` (già presente) |
+
+**Aggiungi ~20 voci al registry e le tre app si compongono in 5 minuti ciascuna**, senza scrivere una riga di logica: scegli i componenti, configuri i parametri via form, esporti.
+
+## 6. Il salto di qualità: da catalogo piatto a catalogo annidato
+
+L'MVP ha un limite onesto: **niente annidamento**. Non puoi mettere una card dentro una grid, o un form dentro una card. Per arrivarci servono due cose:
+
+1. **Model ad albero**, non lista piatta: ogni blocco può avere `children: []`.
+2. **Componenti contenitore** con `accepts: ['card','paragraph',...]`, che nel render disegnano i figli.
+
+```js
+grid: {
+  container: true,
+  accepts: ['card','paragraph','image','button'],
+  html:'<div class="af-grid" style="grid-template-columns:repeat({{cols}},1fr)">{{children}}</div>',
+  config:[{ key:'cols', type:'number', default:2 }]
+}
+```
+
+Con questa modifica (un giorno di lavoro) il catalogo diventa un vero **editor di composizione ad albero** — la stessa cosa che fanno Webflow, Framer, Bubble.
+
+## 7. La roadmap per "qualunque app"
+
+1. **Registry come file separato** (`registry.json`): il catalogo diventa dati, non codice. Puoi caricare registry da URL, versionarli, scambiarli con altri.
+2. **Annidamento** (model ad albero, contenitori).
+3. **State management reattivo**: un piccolo `store` con `subscribe`, così un componente (input) aggiorna un altro (paragrafo). Già oggi `data-bind="name"` è la chiave: basta leggerla nel JS globale generato.
+4. **Wiring tra componenti**: "cliccando il bottone X, imposta la variabile `theme` a `dark`". Model: `{ on: 'click', target: 'button#x', action: 'setState', key:'theme', value:'dark' }`.
+5. **Librerie esterne come "pacchetti"**: Three.js, CodeMirror, Chart.js, Tesseract.js, PDF.js — ognuna con la sua voce nel registry (`deps: [...]`).
+6. **Template come "ricette"**: una libreria di app pre-composte (Forge, Office, 2D23D) che l'utente importa come punto di partenza.
+7. **Export multi-target**: HTML singolo, ZIP progetto, JSON model, Markdown, PDF.
+
+## In una frase
+
+Un editor HTML diventa un costruttore di app quando smette di essere "un foglio bianco" e diventa **catalogo + modello + compositore**. Il "know how" non si genera con un LLM: si **cristallizza** nel catalogo, una voce alla volta. Ogni volta che costruisci qualcosa che ti serve di nuovo, la aggiungi al catalogo, e da quel momento esiste per tutte le app future. È esattamente il principio dell'astrazione che avevamo stabilito: **modello esplicito, mapping dichiarativo, target sostituibile** — applicato non al singolo documento, ma all'intera app.
